@@ -1,7 +1,9 @@
 /*
  Arjun
 
- Copyright (c) 2019, Mate Soos and Kuldeep S. Meel. All rights reserved.
+ Copyright (c) 2019, Mate Soos and Kuldeep S. Meel. 
+                2022, Anna L.D. Latour.
+ All rights reserved.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -24,13 +26,8 @@
 
 #include "common.h"
 
-#ifdef LOUVAIN_COMMS
-#include "louvain_communities/louvain_communities.h"
-#endif
-
 using std::pair;
 using std::make_pair;
-using namespace ArjunInt;
 
 
 void Common::update_sampling_set(
@@ -104,6 +101,8 @@ void Common::add_fixed_clauses()
     indic_to_var.resize(solver->nVars(), var_Undef);
 
     //Indicator variable is TRUE when they are NOT equal
+    // Original variable: a
+    // Copied variable: b
     for(uint32_t var: *sampling_set) {
         //(a=b) = !f
         //a  V -b V  f
@@ -144,6 +143,7 @@ void Common::add_fixed_clauses()
     }
 
     //Don't eliminate the sampling variables
+    // TODO: why only the negative literals?
     for(uint32_t var: *sampling_set) {
         dont_elim.push_back(Lit(var, false));
         dont_elim.push_back(Lit(var+orig_num_vars, false));
@@ -207,19 +207,15 @@ void Common::get_incidence()
 {
     incidence.resize(orig_num_vars, 0);
     incidence_probing.resize(orig_num_vars, 0);
-    assert(solver->nVars() == orig_num_vars);
     vector<uint32_t> inc = solver->get_lit_incidence();
-    assert(inc.size() == orig_num_vars*2);
     for(uint32_t i = 0; i < orig_num_vars; i++) {
         Lit l = Lit(i, true);
-        if (conf.incidence_count == 1) {
+        if (conf.incidence_sort == 10) {
             incidence[l.var()] = inc[l.toInt()] + inc[(~l).toInt()];
-        } else if (conf.incidence_count == 2) {
+        } else if (conf.incidence_sort == 11) {
             incidence[l.var()] = std::max(inc[l.toInt()], inc[(~l).toInt()]);
-        } else if (conf.incidence_count == 3) {
-            incidence[l.var()] = std::min(inc[l.toInt()],inc[(~l).toInt()]);
         } else {
-            assert(false && "This is NOT accepted incidence count");
+            incidence[l.var()] = std::min(inc[l.toInt()],inc[(~l).toInt()]);
         }
     }
 }
@@ -231,7 +227,7 @@ void Common::set_up_solver()
     solver->set_up_for_arjun();
     solver->set_renumber(0);
     solver->set_bve(0);
-    solver->set_verbosity(std::max(conf.verb-2, 0));
+    solver->set_verbosity(std::max((int)conf.verb-2, 0));
     solver->set_intree_probe(conf.intree && conf.simp);
     solver->set_distill(conf.distill && conf.simp);
     solver->set_sls(0);
@@ -255,7 +251,7 @@ bool Common:: simplify_bve_only()
     //Do BVE
     if (conf.simp) {
         solver->set_bve(1);
-        solver->set_verbosity(std::max(conf.verb-2, 0));
+        solver->set_verbosity(std::max((int)conf.verb-2, 0));
         string str("occ-bve");
         if (solver->simplify(&dont_elim, &str) == l_False) {
             return false;
@@ -292,131 +288,31 @@ bool Common::preproc_and_duplicate()
     seen.resize(solver->nVars(), 0);
 
     get_incidence();
-    calc_community_parts();
     if (conf.simp && !simplify()) return false;
-    get_incidence();
+    //incidence = solver->get_var_incidence(); //NOTE: makes it slower
     duplicate_problem();
-    if (conf.simp && !simplify_bve_only()) return false;
-    add_fixed_clauses();
-    if (!run_gauss_jordan()) return false;
+    if (!simplify_bve_only()) return false;
+
+    add_fixed_clauses(); //Add the connection clauses, indicator variables, etc.
+    if (!run_gauss_jordan()) return false;;
 
     //Seen needs re-init, because we got new variables
     seen.clear(); seen.resize(solver->nVars(), 0);
 
-    solver->set_simplify(conf.simp);
+    solver->set_simplify(conf.regularly_simplify && conf.simp);
     solver->set_intree_probe(conf.intree && conf.simp);
     solver->set_distill(conf.distill && conf.simp);
     solver->set_find_xors(conf.gauss_jordan && conf.simp);
     return true;
 }
 
-void Common::calc_community_parts()
+bool Common::in_variable_group(uint32_t var)
 {
-    if (!(conf.unknown_sort == 4 || conf.unknown_sort == 5)) {
-        return;
-    }
-    #ifndef LOUVAIN_COMMS
-    cout << "ERROR: you must compile with louvain community libraries for this to work."
-        << " Install https://github.com/meelgroup/louvain-community first." << endl;
-    exit(-1);
-    #else
-    double myTime = cpuTime();
-    verb_print(1, "[arjun] Calculating Louvain Communities...");
-
-    vector<vector<Lit>> cnf;
-    solver->start_getting_small_clauses(
-        std::numeric_limits<uint32_t>::max(),
-        std::numeric_limits<uint32_t>::max(),
-        false);
-
-    bool ret = true;
-    vector<Lit> cl;
-    map<pair<uint32_t, uint32_t>, long double> edges;
-    while(ret) {
-        ret = solver->get_next_small_clause(cl);
-        if (!ret) {
-            continue;
-        }
-
-        if (cl.size() == 1) {
-            continue;
-        }
-
-        //Update VIG graph
-        long double weight = 1.0L/((long double)cl.size()*((long double)cl.size()-1.0L)/2.0L);
-        for(uint32_t i = 0; i < cl.size(); i ++) {
-            for(uint32_t i2 = i+1; i2 < cl.size(); i2 ++) {
-                uint32_t v1 = cl[i].var();
-                uint32_t v2 = cl[i2].var();
-                assert(v1 < orig_num_vars);
-                assert(v2 < orig_num_vars);
-
-                //must start with smallest
-                if (v2  < v1) {
-                    std::swap(v1, v2);
-                }
-                auto edge = make_pair(v1, v2);
-                auto it = edges.find(edge);
-                if (it == edges.end()) {
-                    edges[edge] = weight;
-                } else {
-                    it->second+=weight;
-                }
-            }
-        }
-    }
-    solver->end_getting_small_clauses();
-
-    LouvainC::Communities graph;
-    for(const auto& it: edges) {
-        graph.add_edge(it.first.first, it.first.second, it.second);
-    }
-    graph.calculate(true);
-    commpart.clear();
-    commpart.resize(orig_num_vars, -1);
-    auto mapping = graph.get_mapping();
-    for(const auto& x: mapping) {
-        assert(x.first < orig_num_vars);
-        commpart[x.first] = x.second;
-        if (x.second == -1) {
-            continue;
-        }
-        if ((unsigned)x.second >= commpart_incs.size()) {
-            commpart_incs.resize(x.second+1, -1);
-        }
-        commpart_incs[x.second] = std::max(
-            commpart_incs[x.second],
-            incidence[x.first]);
-    }
-
-    var_to_num_communities.resize(orig_num_vars);
-    solver->start_getting_small_clauses(
-        std::numeric_limits<uint32_t>::max(),
-        std::numeric_limits<uint32_t>::max(),
-        false);
-    ret = true;
-    while(ret) {
-        ret = solver->get_next_small_clause(cl);
-        if (!ret) {
-            continue;
-        }
-
-        if (cl.size() == 1) {
-            continue;
-        }
-
-        for(uint32_t i = 0; i < cl.size(); i ++) {
-            for(uint32_t i2 = i+1; i2 < cl.size(); i2 ++) {
-                uint32_t v = cl[i].var();
-                uint32_t comm = commpart[cl[i2].var()];
-                var_to_num_communities[v].insert(comm);
-            }
-        }
-    }
-    solver->end_getting_small_clauses();
-
-    verb_print(1, "[mis-comm] Number of communities: " << commpart_incs.size() \
-            << " T: " << (cpuTime() - myTime));
-#endif
+    assert(var2var_group.size() > var);
+    return var2var_group[var];
 }
 
+uint32_t Common::get_group_idx(uint32_t var)
+{
+    return var2var_group[var];
+}

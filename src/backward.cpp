@@ -1,7 +1,9 @@
 /*
  Arjun
 
- Copyright (c) 2019, Mate Soos and Kuldeep S. Meel. All rights reserved.
+ Copyright (c) 2019, Mate Soos and Kuldeep S. Meel. 
+               2022, Anna L.D. Latour.
+ All rights reserved.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -23,9 +25,6 @@
  */
 
 #include "common.h"
-#include <set>
-
-using namespace ArjunInt;
 
 void Common::fill_assumptions_backward(
     vector<Lit>& assumptions,
@@ -33,104 +32,105 @@ void Common::fill_assumptions_backward(
     const vector<char>& unknown_set,
     const vector<uint32_t>& indep)
 {
-    if (conf.verb > 5) {
-        cout << "Filling assumps BEGIN" << endl;
-    }
+    // cout << "Filling assumps BEGIN" << endl;
     assumptions.clear();
 
     //Add known independent as assumptions
     for(const auto& var: indep) {
         assert(var < orig_num_vars);
-
         uint32_t indic = var_to_indic[var];
         assert(indic != var_Undef);
+        // cout << "assump indic for var: " << var << endl;
         assumptions.push_back(Lit(indic, true));
-        if (conf.verb > 5) {
-            cout << "Filled assump with indep: " << var << endl;
-        }
     }
 
-    //Add unknown as assumptions, clean "unknown"
+    // Adding functionality for maintaining Q and I
+    // We need to group the "unknown" variables by their groups, if
+    // applicable. This helper array is meant to do that.
+    vector<bool> added (orig_num_vars, false);
+
     uint32_t j = 0;
     for(uint32_t i = 0; i < unknown.size(); i++) {
         uint32_t var = unknown[i];
-        if (unknown_set[var] == 0) {
-            continue;
-        } else {
-            unknown[j++] = var;
-        }
-        if (conf.verb > 5) {
-            cout << "Filled assump with unknown: " << var << endl;
-        }
+        if (unknown_set[var] == 0) continue;
 
         assert(var < orig_num_vars);
         uint32_t indic = var_to_indic[var];
         assert(indic != var_Undef);
-        assumptions.push_back(Lit(indic, true));
+
+        // Check if the variable is a member of a group.
+        // If yes, we check if it was already added to the independent support.
+        // If no, we add it.
+        if (conf.group_indep && in_variable_group(var)) {
+            if (!added[var]) {
+                for (auto& grp_var: var_groups[var2var_group[var]]) {
+                    unknown[j++] = grp_var;
+                    indic = var_to_indic[grp_var];
+                    assert(indic != var_Undef);
+                    assumptions.push_back(Lit(indic, true));
+                    assert(!added[grp_var]);
+                    added[grp_var] = true;
+                    i++;
+                }
+                i--;
+            }
+        } else {
+            unknown[j++] = var;
+            assert(indic != var_Undef);
+            assumptions.push_back(Lit(indic, true));
+        }
+
+        if (conf.verb > 5) {
+            cout << "Filled assump with unknown: " << var << endl;
+        }
     }
     unknown.resize(j);
-    if (conf.verb > 5) {
-        cout << "Filling assumps END, total assumps size: " << assumptions.size() << endl;
-    }
 }
 
 void Common::backward_round()
 {
-    for(const auto& x: seen) {
-        assert(x == 0);
-    }
+    for(const auto& x: seen) assert(x == 0);
 
     double start_round_time = cpuTimeTotal();
     //start with empty independent set
     vector<uint32_t> indep;
-
-    //Initially, all of samping_set is unknown
     vector<uint32_t> unknown;
     vector<char> unknown_set;
     unknown_set.resize(orig_num_vars, 0);
     for(const auto& x: *sampling_set) {
         assert(x < orig_num_vars);
-        assert(unknown_set[x] == 0 && "No var should be in 'sampling_set' twice!");
-        unknown.push_back(x);
-        unknown_set[x] = 1;
-    }
-
-    sort_unknown(unknown);
-
-    if (conf.specified_order_fname != "") {
-        std::set<uint32_t> old_unknown(unknown.begin(), unknown.end());
-        unknown.clear();
-
-        std::ifstream infile(conf.specified_order_fname);
-        std::string line;
-        uint32_t line_num = 1;
-        while (std::getline(infile, line))
-        {
-            std::istringstream iss(line);
-            int a;
-            if (!(iss >> a)) {
-                cout << "ERROR: the file '" << conf.specified_order_fname << "' contains a line we cannot parse to be a variable number" << endl;
-                cout << "ERROR line number: " << line_num << std::endl;
-                cout << "ERROR: lines should ONLY contain a single variable" << endl;
-                exit(-1);
+        // Check if the variable is a member of a group.
+        // If yes, iterate through all gropu members to add them to the 
+        // set of candidate variables for the indpendent support.
+        // The unknown_set corresponds to $Q$ in the pseudocode in Algorithm 1
+        // in our paper.
+        if (conf.group_indep && in_variable_group(x)) {
+            for (auto& grp_var: var_groups[get_group_idx(x)]) {
+                if (unknown_set[grp_var] == 0) {
+                    unknown.push_back(grp_var);
+                    unknown_set[grp_var] = 1;
+                }
             }
-            if (old_unknown.find(a) == old_unknown.end()) {
-                cout << "WARNING: the variable " << a << " is in the order file but not in the original order." << endl;
-            }
-            unknown.push_back(a);
-            line_num++;
+        } else {
+            assert(unknown_set[x] == 0 && "No var should be in 'sampling_set' twice!");
+            unknown.push_back(x);
+            unknown_set[x] = 1;
         }
     }
 
+    // TODO: bring back sorting! But respecting the groups!
+    if (conf.group_indep) {
+        cout << "c [arjun] WARNING: no sorting in grouped independent support setting!" << endl;
+    } else {
+        sort_unknown(unknown);
+    }
     if (conf.verb >= 4) {
         cout << "Sorted output: "<< endl;
         for (const auto& v:unknown) {
-            cout << "c var: " << v << " occ: " << incidence[v]
-            //<< " prop-inc: " << std::setw(6) << incidence_probing[v]
-            << endl;
-            if (var_to_num_communities.size() > v) {
-                cout << " fan-out to comms: " << std::setw(6) << var_to_num_communities[v].size();
-            }
+            cout
+            << "Var: " << std::setw(6) << v
+            << " inc: " << std::setw(6) << incidence[v]
+            << " prop-inc: " << std::setw(6) << incidence_probing[v];
             cout << endl;
         }
     }
@@ -154,146 +154,83 @@ void Common::backward_round()
         mod = std::max<int>(mod, 1);
     }
 
-
     uint32_t ret_false = 0;
     uint32_t ret_true = 0;
     uint32_t ret_undef = 0;
-    bool quick_pop_ok = false;
     uint32_t fast_backw_calls = 0;
     uint32_t fast_backw_max = 0;
     uint32_t fast_backw_tot = 0;
-    uint32_t indic_var = var_Undef;
     vector<uint32_t> non_indep_vars;
+
     while(true) {
         uint32_t test_var = var_Undef;
-        if (quick_pop_ok) {
-            //Remove 2 last
-            assumptions.pop_back();
-            assumptions.pop_back();
 
-            //No more left, try again with full
-            if (assumptions.empty()) {
-                if (conf.verb >= 5) cout << "c [arjun] No more left, try again with full" << endl;
-                break;
-            }
-
-            indic_var = assumptions[assumptions.size()-1].var();
-            assumptions.pop_back();
-            assert(indic_var < indic_to_var.size());
-            test_var = indic_to_var[indic_var];
-            assert(test_var != var_Undef);
-            assert(test_var < orig_num_vars);
-
-            //something is messed up
-            if (!unknown_set[test_var]) {
-                quick_pop_ok = false;
-                continue;
-            }
-            uint32_t last_unkn = unknown[unknown.size()-1];
-            assert(last_unkn == test_var);
+        while(!unknown.empty()) {
+            uint32_t var = unknown[unknown.size()-1];
             unknown.pop_back();
-        } else {
-            while(!unknown.empty()) {
-                uint32_t var = unknown[unknown.size()-1];
-                if (unknown_set[var]) {
-                    test_var = var;
-                    unknown.pop_back();
-                    break;
-                } else {
-                    unknown.pop_back();
-                }
-            }
 
-            if (test_var == var_Undef) {
-                //we are done, backward is finished
-                if (conf.verb >= 5) cout << "c [arjun] we are done, backward is finished" << endl;
+            if (unknown_set[var]) {
+                test_var = var;
+                // If variable var is yet unknown (and therefore a 
+                // member of the set $Q$ in our paper), we remove all the
+                // variables of var's group from the unknown set. 
+                // This corresponds to line 4 in Algorithm 1 in our paper.
+                if (get_group_idx(var) != 0) {
+                    for(uint32_t i = 1; i < var_groups[get_group_idx(test_var)].size(); i++) {
+                        assert(!unknown.empty());
+                        uint32_t v2 = unknown[unknown.size()-1];
+                        assert(get_group_idx(v2) == get_group_idx(var));
+                        assert(unknown_set[v2]);
+                        unknown_set[v2] = 0;
+                        unknown.pop_back();
+                    }
+                }
                 break;
             }
-            indic_var = var_to_indic[test_var];
         }
+
+        if (test_var == var_Undef) {
+            cout << "c [arjun] we are done, backward is finished" << endl;
+            break;
+        }
+
         assert(test_var < orig_num_vars);
         assert(unknown_set[test_var] == 1);
         unknown_set[test_var] = 0;
-//         cout << "Testing: " << test_var << endl;
 
         //Assumption filling
         assert(test_var != var_Undef);
-        if (!quick_pop_ok) {
-            fill_assumptions_backward(assumptions, unknown, unknown_set, indep);
-        }
-        assumptions.push_back(Lit(test_var, false));
-        assumptions.push_back(Lit(test_var + orig_num_vars, true));
-
-        solver->set_no_confl_needed();
-
+        fill_assumptions_backward(assumptions, unknown, unknown_set, indep);
+        
         lbool ret = l_Undef;
-        if (!conf.fast_backw) {
+        assert(test_var != var_Undef);
+        // Here, we are going to test if test_var needs to be in the 
+        // independent support. By now, we have removed test_var and its group
+        // from the unknown set (set $Q$ in our paper). The set assumptions in
+        // this code corresponds to the $C$ in our paper. We now add the 
+        // variables of test_var's group back to $C$ one at a time, to check if
+        // we need them to keep $C$ a GIS of the input formula.
+        // The for-loop below corresponds to lines 6-11 of Algorithm 1 in our 
+        // paper.        
+        if (get_group_idx(test_var) != 0) {
+            const uint32_t orig_ass_size = assumptions.size();
+            for (auto& v: var_groups[get_group_idx(test_var)]) {
+                assumptions.push_back(Lit(v, false));
+                assumptions.push_back(Lit(v + orig_num_vars, true));
+                solver->set_max_confl(conf.backw_max_confl);
+                ret = solver->solve(&assumptions);
+                if (ret == l_Undef || ret == l_True) break;
+                assumptions.resize(orig_ass_size);
+            }
+        } else {
+            assumptions.push_back(Lit(test_var, false));
+            assumptions.push_back(Lit(test_var + orig_num_vars, true));
             solver->set_max_confl(conf.backw_max_confl);
             ret = solver->solve(&assumptions);
-        } else {
-            FastBackwData b;
-            b._assumptions = &assumptions;
-            b.indic_to_var  = &indic_to_var;
-            b.orig_num_vars = orig_num_vars;
-            b.non_indep_vars = &non_indep_vars;
-            b.indep_vars = &indep;
-            b.fast_backw_on = true;
-            b.test_indic = &indic_var;
-            b.test_var = &test_var;
-            b.max_confl = conf.backw_max_confl;
-
-            fast_backw_calls++;
-            if (conf.verb > 5) {
-                cout << "test var is: " << test_var << endl;
-                cout << "find_fast_backw BEGIN " << endl;
-            }
-            non_indep_vars.clear();
-            uint32_t indep_vars_last_pos = indep.size();
-            ret = solver->find_fast_backw(b);
-
-            if (conf.verb >= 3) {
-                cout
-                << "c [arjun] non_indep_vars.size(): " << non_indep_vars.size()
-                << " indep.size(): " << indep.size()
-                << " ret: " << ret
-                << " test_var: " << test_var
-                << endl;
-            }
-            if (ret == l_False) {
-                if (conf.verb) {
-                    cout << "c [arjun] Problem is UNSAT" << endl;
-                }
-                for(auto& x: unknown_set) {
-                    x = 0;
-                }
-                unknown.clear();
-                indep.clear();
-                assumptions.clear();
-                break;
-            }
-
-            fast_backw_tot += non_indep_vars.size();
-            fast_backw_max = std::max<uint32_t>(non_indep_vars.size(), fast_backw_max);
-            for(uint32_t i = indep_vars_last_pos; i < indep.size(); i ++) {
-                uint32_t var = indep[i];
-                unknown_set[var] = 0;
-            }
-
-            for(uint32_t i = 0; i < non_indep_vars.size(); i ++) {
-                uint32_t var = non_indep_vars[i];
-                assert(var < orig_num_vars);
-                unknown_set[var] = 0;
-                not_indep++;
-            }
-            quick_pop_ok = false;
-
-            //We have finished it all off
-            if (test_var == var_Undef) {
-                assert(indic_var == var_Undef);
-                continue;
-            }
-            unknown_set[test_var] = 0;
         }
+        solver->set_no_confl_needed();
+        
+        // TODO: make grouped variables compatible with fast_backw
         if (ret == l_False) {
             ret_false++;
             if (conf.verb >= 5) cout << "c [arjun] backw solve(): False" << endl;
@@ -305,21 +242,31 @@ void Common::backward_round()
             ret_undef++;
         }
 
-        assert(unknown_set[test_var] == 0);
-        if (ret == l_Undef) {
-            //Timed out, we'll treat is as unknown
-            quick_pop_ok = false;
+        // TODO: come up with an equivalent assertion for group mode.
+        if (!conf.group_indep) {
+            assert(unknown_set[test_var] == 0);
+        }
+        
+        if (ret == l_Undef || //Timed out, we'll treat is as unknown
+            ret == l_True)    //Independent
+        {   
             assert(test_var < orig_num_vars);
-            indep.push_back(test_var);
-        } else if (ret == l_True) {
-            //Independent
-            quick_pop_ok = false;
-            indep.push_back(test_var);
+            // Having established that at least one variable in 
+            // test_var's group is independent, we must now add the entire
+            // group to the independent support. This corresponds to line 8
+            // of Algorithm 1 in our paper
+            if (in_variable_group(test_var)) {
+                cout << "Group " <<  var2var_group[test_var] << " is independent" << endl;
+                for (auto& grp_var: var_groups[get_group_idx(test_var)]) {
+                    indep.push_back(grp_var);
+                }
+            } else {
+                indep.push_back(test_var);
+            }
         } else if (ret == l_False) {
             //not independent
             //i.e. given that all in indep+unkown is equivalent, it's not possible that a1 != b1
             not_indep++;
-            quick_pop_ok = true;
         }
 
         if (iter % mod == (mod-1) && conf.verb) {
@@ -359,7 +306,6 @@ void Common::backward_round()
             fast_backw_max = 0;
         }
         iter++;
-
         if (iter % 500 == 499) {
             update_sampling_set(unknown, unknown_set, indep);
         }

@@ -1,4 +1,5 @@
 # Copyright (c) 2017, Mate Soos
+#               2022, Anna L.D. Latour
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -46,7 +47,7 @@ endif()
 # -----------------------------------------------------------------------------
 # Provide scripts dir for included cmakes to use
 # -----------------------------------------------------------------------------
-set(ARJUNS_SCRIPTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/scripts)
+set(ARJUN_GISS_SCRIPTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/scripts)
 
 include (GenerateExportHeader)
 include (GNUInstallDirs)
@@ -86,7 +87,7 @@ foreach (build_config ${build_types})
     endforeach()
 endforeach()
 
-PROJECT(arjun)
+PROJECT(arjun-gis)
 
 # contains some library search cmake scripts
 SET(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
@@ -105,31 +106,13 @@ if (STATICCOMPILE)
     set(Boost_USE_STATIC_LIBS ON)
 endif()
 
-macro(add_sanitize_option flagname)
-    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${flagname}" )
-endmacro()
-
 option(SANITIZE "Use Clang sanitizers. You MUST use clang++ as the compiler for this to work" OFF)
 if (SANITIZE)
-    MESSAGE(WARNING " --Using clang sanitizers -- you MUST use clang++ or the compile WILL fail")
+    # MESSAGE(WARNING " --Using clang sanitizers -- you MUST use clang++ or the compile WILL fail")
     SET( CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS}  -lasan -lubsan " )
     SET( CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -lasan -lubsan ")
-    add_compile_options("-fsanitize=address")
-    #    add_compile_options("-fsanitize=integer")
-    add_compile_options("-fsanitize=undefined")
-    add_compile_options("-fsanitize=null")
-    add_compile_options("-fsanitize=alignment")
-    #add_compile_options("-fno-sanitize-recover")
-    add_compile_options("-fsanitize=return")
-    add_compile_options("-fsanitize=bounds")
-    add_compile_options("-fsanitize=float-divide-by-zero")
-    add_compile_options("-fsanitize=integer-divide-by-zero")
-    #    add_compile_options("-fsanitize=unsigned-integer-overflow")
-    add_compile_options("-fsanitize=signed-integer-overflow")
-    add_compile_options("-fsanitize=bool")
-    add_compile_options("-fsanitize=enum")
-    add_compile_options("-fsanitize=float-cast-overflow")
-    add_compile_options("$<$<CONFIG:RELWITHDEBINFO>:-D_GLIBCXX_ASSERTIONS>")
+    add_sanitize_option("-fsanitize-trap=undefined,float-divide-by-zero,unsigned-integer-overflow,implicit-conversion,local-bounds,bounds,return,alignment,null,integer,enum,bool,float-cast-overflow,integer-divide-by-zero,signed-integer-overflow")
+    add_sanitize_option("-fsanitize=address")
 endif()
 
 include(CheckCXXCompilerFlag)
@@ -241,9 +224,9 @@ else()
 endif()
 
 option(ENABLE_TESTING "Enable testing" OFF)
-option(ARJUN_SERIALIZE OFF)
-if (ARJUN_SERIALIZE)
-    add_definitions( -DARJUN_SERIALIZE )
+option(COVERAGE "Build with coverage check" OFF)
+if (COVERAGE AND NOT STATICCOMPILE)
+    MESSAGE(FATAL_ERROR "Coverage can only be computed on static compilation")
 endif()
 
 if (NOT WIN32)
@@ -315,7 +298,7 @@ if ((${CMAKE_SYSTEM_NAME} MATCHES "Linux") OR (${CMAKE_SYSTEM_NAME} MATCHES "Dar
 endif()
 
 if(NOT MSVC)
-  set(DEF_INSTALL_CMAKE_DIR lib/cmake/arjun)
+  set(DEF_INSTALL_CMAKE_DIR lib/cmake/arjun-gis)
 endif()
 
 # -----------------------------------------------------------------------------
@@ -338,53 +321,51 @@ if (GIT_EXECUTABLE)
 else()
   set(GIT_SHA "GIT-hash-notfound")
 endif()
-set(ARJUN_FULL_VERSION "2.5.2")
+set(ARJUN_GIS_FULL_VERSION "2.5.0")
 
-string(REPLACE "." ";" ARJUN_FULL_VERSION_LIST ${ARJUN_FULL_VERSION})
-SetVersionNumber("PROJECT" ${ARJUN_FULL_VERSION_LIST})
+string(REPLACE "." ";" ARJUN_GIS_FULL_VERSION_LIST ${ARJUN_GIS_FULL_VERSION})
+SetVersionNumber("PROJECT" ${ARJUN_GIS_FULL_VERSION_LIST})
 MESSAGE(STATUS "PROJECT_VERSION: ${PROJECT_VERSION}")
 MESSAGE(STATUS "PROJECT_VERSION_MAJOR: ${PROJECT_VERSION_MAJOR}")
 MESSAGE(STATUS "PROJECT_VERSION_MINOR: ${PROJECT_VERSION_MINOR}")
 MESSAGE(STATUS "PROJECT_VERSION_PATCH: ${PROJECT_VERSION_PATCH}")
 
+
 option(EMSCRIPTEN "Generate only emscripten JS" OFF)
 if (NOT EMSCRIPTEN)
     set (boost_components "")
-    set(boost_components ${boost_components} program_options serialization)
+    set(boost_components ${boost_components} program_options)
     find_package( Boost 1.46 COMPONENTS ${boost_components})
-else()
-    set(BUILD_SHARED_LIBS ON)
-    set(NOZLIB ON)
 endif()
 
 # ----------
 # manpage
 # ----------
-if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND NOT EMSCRIPTEN)
-    find_program(HELP2MAN_FOUND help2man)
-    if (HELP2MAN_FOUND)
-        ADD_CUSTOM_TARGET(man_arjun
-            ALL
-            DEPENDS arjun-bin
-        )
-
-        ADD_CUSTOM_COMMAND(
-            TARGET man_arjun
-            COMMAND help2man
-            ARGS --version-string=${ARJUN_FULL_VERSION} --help-option="-h" $<TARGET_FILE:arjun-bin> -o ${CMAKE_CURRENT_BINARY_DIR}/arjun.1
-        )
-
-        INSTALL(
-            FILES ${CMAKE_CURRENT_BINARY_DIR}/arjun.1
-            DESTINATION ${CMAKE_INSTALL_PREFIX}/man/man1)
-
-        message(STATUS "Manpage will be created and installed")
-    else()
-        MESSAGE(STATUS "Cannot find help2man, not creating manpage")
-    endif()
-else()
-    MESSAGE(STATUS "Not on Linux, not creating manpage")
-endif()
+# if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND NOT EMSCRIPTEN)
+#     find_program(HELP2MAN_FOUND help2man)
+#     if (HELP2MAN_FOUND)
+#         ADD_CUSTOM_TARGET(man_arjun-gis
+#             ALL
+#             DEPENDS arjun-gis-bin
+#         )
+#
+#         ADD_CUSTOM_COMMAND(
+#             TARGET man_arjun-gis
+#             COMMAND help2man
+#             ARGS --version-string=${ARJUN_GIS_FULL_VERSION} --help-option="-h" $<TARGET_FILE:arjun-gis-bin> -o ${CMAKE_CURRENT_BINARY_DIR}/arjun-gis.1
+#         )
+#
+#         INSTALL(
+#             FILES ${CMAKE_CURRENT_BINARY_DIR}/arjun-gis.1
+#             DESTINATION ${CMAKE_INSTALL_PREFIX}/man/man1)
+#
+#         message(STATUS "Manpage will be created and installed")
+#     else()
+#         MESSAGE(STATUS "Cannot find help2man, not creating manpage")
+#     endif()
+# else()
+#     MESSAGE(STATUS "Not on Linux, not creating manpage")
+# endif()
 
 # -----------------------------------------------------------------------------
 # Look for ZLIB (For reading zipped CNFs)
@@ -416,7 +397,7 @@ message(STATUS "All defines at startup: ${COMPILE_DEFINES}")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib)
 
-macro(arjun_add_public_header LIBTARGET HEADER)
+macro(arjun_gis_add_public_header LIBTARGET HEADER)
     get_target_property(EXISTING_PUBLIC_HEADERS ${LIBTARGET} PUBLIC_HEADER)
     if(EXISTING_PUBLIC_HEADERS)
         list(APPEND EXISTING_PUBLIC_HEADERS "${HEADER}")
@@ -435,7 +416,6 @@ find_package(cryptominisat5 CONFIG)
 if (cryptominisat5_FOUND)
     message(STATUS "Found CryptoMiniSat 5.x")
     message(STATUS "CryptoMiniSat5 dynamic lib: ${CRYPTOMINISAT5_LIBRARIES}")
-    message(STATUS "CryptoMiniSat5 dynamic lib dirs: ${CRYPTOMINISAT5_LIBRARY_DIRS}")
     message(STATUS "CryptoMiniSat5 static lib:  ${CRYPTOMINISAT5_STATIC_LIBRARIES}")
     message(STATUS "CryptoMiniSat5 static lib deps: ${CRYPTOMINISAT5_STATIC_LIBRARIES_DEPS}")
     message(STATUS "CryptoMiniSat5 include dirs: ${CRYPTOMINISAT5_INCLUDE_DIRS}")
@@ -448,15 +428,14 @@ if (louvain_communities_FOUND)
     message(STATUS "Found Louvain Communities library")
     message(STATUS "Louvain Communities dynamic lib: ${LOUVAIN_COMMUNITIES_LIBRARIES}")
     message(STATUS "Louvain Communities include dirs: ${LOUVAIN_COMMUNITIES_INCLUDE_DIRS}")
-    add_definitions( -DLOUVAIN_COMMS )
 else()
-    message(STATUS "Cannot find Louvain Communities libraries. Not enabling.")
+    message(FATAL_ERROR "Cannot find Louvain Communities libraries. Please install it! Exiting.")
 endif()
 
 # -----------------------------------------------------------------------------
 # Provide an export name to be used by targets that wish to export themselves.
 # -----------------------------------------------------------------------------
-set(ARJUN_EXPORT_NAME "arjunTargets")
+set(ARJUN_GIS_EXPORT_NAME "arjungisTargets")
 
 add_subdirectory(src rjun-src)
 
@@ -488,48 +467,48 @@ else()
 endif()
 
 # -----------------------------------------------------------------------------
-# Export our targets so that other CMake based projects can interface with
-# the build of arjun in the build-tree
+# Export our targets so that other CMake based projecfind_package(louvain_communities CONFIG)
+# the build of arjun-gis in the build-tree
 # -----------------------------------------------------------------------------
-set(ARJUN_TARGETS_FILENAME "arjunTargets.cmake")
-set(ARJUN_CONFIG_FILENAME "arjunConfig.cmake")
+set(ARJUN_GIS_TARGETS_FILENAME "arjungisTargets.cmake")
+set(ARJUN_GIS_CONFIG_FILENAME "arjungisConfig.cmake")
 
 # Export targets
-set(MY_TARGETS arjun)
+set(MY_TARGETS arjun-gis)
 export(
     TARGETS ${MY_TARGETS}
-    FILE "${CMAKE_CURRENT_BINARY_DIR}/${ARJUN_TARGETS_FILENAME}"
+    FILE "${CMAKE_CURRENT_BINARY_DIR}/${ARJUN_GIS_TARGETS_FILENAME}"
 )
 
-# Create arjunConfig file
+# Create arjungisConfig file
 set(EXPORT_TYPE "Build-tree")
 set(CONF_INCLUDE_DIRS "${CMAKE_CURRENT_BINARY_DIR}/include")
-configure_file(arjunConfig.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/${ARJUN_CONFIG_FILENAME}" @ONLY
+configure_file(arjungisConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/${ARJUN_GIS_CONFIG_FILENAME}" @ONLY
 )
 
 # Export this package to the CMake user package registry
 # Now the user can just use find_package(cryptominisat5) on their system
-export(PACKAGE arjun)
+export(PACKAGE arjun-gis)
 
-set(DEF_INSTALL_CMAKE_DIR lib/cmake/arjun)
-set(ARJUN_INSTALL_CMAKE_DIR ${DEF_INSTALL_CMAKE_DIR} CACHE PATH
-    "Installation directory for arjun CMake files")
+set(DEF_INSTALL_CMAKE_DIR lib/cmake/arjun-gis)
+set(ARJUN_GIS_INSTALL_CMAKE_DIR ${DEF_INSTALL_CMAKE_DIR} CACHE PATH
+    "Installation directory for arjun-gis CMake files")
 
-# Create arjunConfig file
+# Create arjungisConfig file
 set(EXPORT_TYPE "installed")
 set(CONF_INCLUDE_DIRS "${CMAKE_INSTALL_PREFIX}/include")
-configure_file(arjunConfig.cmake.in
-   "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_FILES_DIRECTORY}/${ARJUN_CONFIG_FILENAME}" @ONLY
+configure_file(arjungisConfig.cmake.in
+   "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_FILES_DIRECTORY}/${ARJUN_GIS_CONFIG_FILENAME}" @ONLY
 )
 
 install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_FILES_DIRECTORY}/${ARJUN_CONFIG_FILENAME}"
-    DESTINATION "${ARJUN_INSTALL_CMAKE_DIR}"
+    "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_FILES_DIRECTORY}/${ARJUN_GIS_CONFIG_FILENAME}"
+    DESTINATION "${ARJUN_GIS_INSTALL_CMAKE_DIR}"
 )
 
 # Install the export set for use with the install-tree
 install(
-    EXPORT ${ARJUN_EXPORT_NAME}
-    DESTINATION "${ARJUN_INSTALL_CMAKE_DIR}"
+    EXPORT ${ARJUN_GIS_EXPORT_NAME}
+    DESTINATION "${ARJUN_GIS_INSTALL_CMAKE_DIR}"
 )

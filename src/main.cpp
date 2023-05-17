@@ -1,7 +1,9 @@
 /*
  Arjun
 
- Copyright (c) 2019-2020, Mate Soos and Kuldeep S. Meel. All rights reserved.
+ Copyright (c) 2019-2020, Mate Soos and Kuldeep S. Meel. 
+                    2022, Anna Latour.
+ All rights reserved.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -23,6 +25,7 @@
  */
 
 #include <boost/program_options.hpp>
+using boost::lexical_cast;
 namespace po = boost::program_options;
 
 #if defined(__GNUC__) && defined(__linux__)
@@ -37,39 +40,34 @@ namespace po = boost::program_options;
 #include <sstream>
 #include <string>
 #include <signal.h>
-#ifdef USE_ZLIB
-#include <zlib.h>
-#endif
-
 
 #include "time_mem.h"
+
 #include "arjun.h"
 #include "config.h"
-#include <cryptominisat5/dimacsparser.h>
+#include "dimacsparser-gis.h"
+
 
 using std::cout;
 using std::cerr;
 using std::endl;
+using std::map;
+using std::set;
 using std::string;
 using std::vector;
-using namespace CMSat;
 
 po::options_description arjun_options = po::options_description("Arjun options");
 po::options_description help_options;
 po::variables_map vm;
 po::positional_options_description p;
 double startTime;
-ArjunInt::Config conf;
+Config conf;
 ArjunNS::Arjun* arjun = NULL;
 string elimtofile;
-string recover_file;
 
 int recompute_sampling_set = 0;
 uint32_t orig_sampling_set_size = 0;
 uint32_t polar_mode = 0;
-int sparsify = true;
-int renumber = true;
-bool gates = true;
 
 // static void signal_handler(int) {
 //     cout << endl << "c [arjun] INTERRUPTING ***" << endl << std::flush;
@@ -83,90 +81,32 @@ void add_arjun_options()
     arjun_options.add_options()
     ("help,h", "Prints help")
     ("version", "Print version info")
-    ("input", po::value<std::vector<string>>(), "file to read/write")
+    ("input", po::value<string>(), "file to read")
     ("verb,v", po::value(&conf.verb)->default_value(conf.verb), "verbosity")
     ("seed,s", po::value(&conf.seed)->default_value(conf.seed), "Seed")
-//     ("bve", po::value(&conf.bve)->default_value(conf.bve), "bve")
-    ("sort", po::value(&conf.unknown_sort)->default_value(conf.unknown_sort),
-     "Which sorting mechanism.")
-    ("recomp", po::value(&recompute_sampling_set)->default_value(recompute_sampling_set),
-     "Recompute sampling set even if it's part of the CNF")
-    ("backward", po::value(&conf.backward)->default_value(conf.backward),
-     "Do backwards query")
-    ("empty", po::value(&conf.empty_occs_based)->default_value(conf.empty_occs_based),
-     "Use empty occurrence improvement")
+    ("groupind", po::value(&conf.group_indep)->default_value(conf.group_indep),
+     "Input defines grouped variables.") // by anonymous@authors.aaai23
     ("maxc", po::value(&conf.backw_max_confl)->default_value(conf.backw_max_confl),
      "Maximum conflicts per variable in backward mode")
     ;
 
-    po::options_description simp_options("Simplification before indep detection");
-    simp_options.add_options()
-    ("bvepresimp", po::value(&conf.bve_pre_simplify)->default_value(conf.bve_pre_simplify),
-     "simplify")
-    ("simp", po::value(&conf.simp)->default_value(conf.simp), "Do ANY sort of simplification")
-    ("probe", po::value(&conf.probe_based)->default_value(conf.probe_based),
-     "Use simple probing to set (and define) some variables")
-    ("intree", po::value(&conf.intree)->default_value(conf.intree), "intree")
-    ("backbone", po::value(&conf.backbone_simpl)->default_value(conf.backbone_simpl),
-     "Use backbone simplification")
-    ("backcmsgen", po::value(&conf.backbone_simpl_cmsgen)->default_value(conf.backbone_simpl_cmsgen), "Use CMSGen to detect flipped during backbone simplification")
-    ("backmaxconfl", po::value(&conf.backbone_simpl_max_confl)->default_value(conf.backbone_simpl_max_confl),
-     "Backbone simplification max conflicts")
-    ;
-
-
-    po::options_description gate_options("Gate options");
-    gate_options.add_options()
-    ("gates", po::value<bool>(&gates),
-     "Turn on/off all gate-based definability")
-    ("nogatebelow", po::value<double>(&conf.no_gates_below)->default_value(conf.no_gates_below)
-     , "Don't use gates below this incidence relative position (1.0-0.0) to minimize the independent set. Gates are not very accurate, but can save a LOT of time. We use them to get rid of most of the uppert part of the sampling set only. Default is 99% is free-for-all, the last 1% we test. At 1.0 we test everything, at 0.0 we try using gates for everything.")
-    ("orgate", po::value(&conf.or_gate_based)->default_value(conf.or_gate_based),
-     "Use 3-long gate detection in SAT solver to define some variables")
-    ("irreggate", po::value(&conf.irreg_gate_based)->default_value(conf.irreg_gate_based),
-     "Use irregular gate based removal of variables from sampling set")
-    ("itegate", po::value(&conf.ite_gate_based)->default_value(conf.ite_gate_based),
-     "Use ITE gate detection in SAT solver to define some variables")
-    ("xorgate", po::value(&conf.xor_gates_based)->default_value(conf.xor_gates_based),
-     "Use XOR detection in SAT solver to define some variables")
-    ;
-
-    po::options_description debug_options("Debug options");
-    debug_options.add_options()
-    ("fastbackw", po::value(&conf.fast_backw)->default_value(conf.fast_backw), "fast_backw")
-    ("gaussj", po::value(&conf.gauss_jordan)->default_value(conf.gauss_jordan),
-     "Use XOR finding and Gauss-Jordan elimination")
-    ("sparsify", po::value(&sparsify)->default_value(sparsify),
-     "Use Oracle from SharpSAT-TD to sparsify CNF formula. Expensive, but useful for SharpSAT-style counters")
-    ("renumber", po::value(&renumber)->default_value(renumber),
-     "Renumber variables to start from 1...N in CNF. Setting this to 0 is EXPERIMENTAL!!")
-    ("distill", po::value(&conf.distill)->default_value(conf.distill), "distill")
-    ("bve", po::value(&conf.bve_during_elimtofile)->default_value(conf.bve_during_elimtofile),
-     "Use BVE during simplificaiton of the formula")
-    ("bce", po::value(&conf.bce)->default_value(conf.bce),
-     "Use blocked clause elimination (BCE). VERY experimental!!")
-    ("specifiedorder", po::value(&conf.specified_order_fname)
-     , "Try to remove variables from the independent set in this order. File must contain a variable on each line. Variables start at ZERO. Variable from the BOTTOM will be removed FIRST. This is for DEBUG ONLY")
-    ;
-
     help_options.add(arjun_options);
-    help_options.add(simp_options);
-    help_options.add(gate_options);
-    help_options.add(debug_options);
 }
 
 void add_supported_options(int argc, char** argv)
 {
     add_arjun_options();
-    p.add("input", -1);
+    p.add("input", 1);
 
     try {
         po::store(po::command_line_parser(argc, argv).options(help_options).positional(p).run(), vm);
         if (vm.count("help"))
         {
             cout
-            << "Minimal projection set finder and simplifier." << endl << endl
-            << "arjun [options] inputfile [outputfile]" << endl;
+            << "Minimal projection set finder" << endl;
+
+            cout
+            << "arjun [options] inputfile" << endl << endl;
 
             cout << help_options << endl;
             std::exit(0);
@@ -270,10 +210,6 @@ void print_final_indep_set(const vector<uint32_t>& indep_set, const vector<uint3
     for(const uint32_t s: indep_set) cout << s+1 << " ";
     cout << "0" << endl;
 
-    cout << "c empties ";
-    for(const uint32_t s: empty_occs) cout << s+1 << " ";
-    cout << "0" << endl;
-
     cout
     << "c [arjun] final set size:      " << std::setw(7) << indep_set.size()
     << " percent of original: "
@@ -291,10 +227,10 @@ void readInAFile(const string& filename)
 {
     #ifndef USE_ZLIB
     FILE * in = fopen(filename.c_str(), "rb");
-    DimacsParser<StreamBuffer<FILE*, FN>, ArjunNS::Arjun> parser(arjun, NULL, 0);
+    DimacsParserGIS::DimacsParser<CMSat::StreamBuffer<FILE*, CMSat::FN>, ArjunNS::Arjun> parser(arjun, NULL, 0);
     #else
     gzFile in = gzopen(filename.c_str(), "rb");
-    DimacsParser<StreamBuffer<gzFile, GZ>, ArjunNS::Arjun> parser(arjun, NULL, 0);
+    DimacsParserGIS::DimacsParser<CMSat::StreamBuffer<gzFile, CMSat::GZ>, ArjunNS::Arjun> parser(arjun, NULL, 0);
     #endif
 
     if (in == NULL) {
@@ -306,7 +242,7 @@ void readInAFile(const string& filename)
         std::exit(-1);
     }
 
-    if (!parser.parse_DIMACS(in, true)) {
+    if (!parser.parse_DIMACS(in, false)) {
         exit(-1);
     }
 
@@ -315,7 +251,17 @@ void readInAFile(const string& filename)
     } else {
         orig_sampling_set_size = arjun->set_starting_sampling_set(parser.sampling_vars);
     }
-
+    if (conf.group_indep) {
+        // We must communicate the variable groups that the parser read to Arjun
+	if (conf.verb > 1) {
+		cout << "SET GROUPS IN ARJUN" << endl;
+	}
+        arjun->set_group_independent_support(conf.group_indep);
+        arjun->set_variable_groups(parser.var2var_group, parser.var_groups);
+        if (conf.verb > 1) {
+            arjun->print_var_groups();
+        }
+    }
     #ifndef USE_ZLIB
         fclose(in);
     #else
@@ -323,97 +269,37 @@ void readInAFile(const string& filename)
     #endif
 }
 
-void dump_cnf(const ArjunNS::SimplifiedCNF& simpcnf)
+void dump_cnf(const std::pair<vector<vector<CMSat::Lit>>, uint32_t>& cnf, const vector<uint32_t>& sampl_set, const uint32_t multiply = 0)
 {
-    uint32_t num_cls = simpcnf.cnf.size();
+    uint32_t num_cls = cnf.first.size();
+    uint32_t max_var = cnf.second;
     std::ofstream outf;
     outf.open(elimtofile.c_str(), std::ios::out);
-    outf << "p cnf " << simpcnf.nvars << " " << num_cls << endl;
+    outf << "p cnf " << max_var << " " << num_cls << endl;
 
     //Add projection
     outf << "c ind ";
-    for(const auto& v: simpcnf.sampling_vars) {
-        assert(v < simpcnf.nvars);
+    for(const auto& v: sampl_set) {
         outf << v+1  << " ";
     }
     outf << "0\n";
 
-    for(const auto& cl: simpcnf.cnf) outf << cl << " 0\n";
-    outf << "c MUST MULTIPLY BY 2**" << simpcnf.empty_occs << endl;
+    for(const auto& cl: cnf.first) {
+        outf << cl << " 0\n";
+    }
+    outf << "c MUST MUTIPLY BY 2**" << multiply << endl;
 }
 
-void elim_to_file(const vector<uint32_t>& sampl_vars) //contains empty_occs!
+void elim_to_file(
+    const vector<uint32_t>& sampl_set,
+    const vector<uint32_t>& empty_occs,
+    uint32_t orig_num_vars)
 {
     double dump_start_time = cpuTime();
     cout << "c [arjun] dumping simplified problem to '" << elimtofile << "'" << endl;
-    auto ret = arjun->get_fully_simplified_renumbered_cnf(
-        sampl_vars, sparsify, renumber, !recover_file.empty());
-
-    if (!recover_file.empty()) {
-        std::ofstream f(recover_file, std::ios::out | std::ios::binary);
-        f.write(&ret.sol_ext_data[0], ret.sol_ext_data.size());
-        f.close();
-    }
-
-    dump_cnf(ret);
-    cout << "c [arjun] Done dumping. T: "
-        << std::setprecision(2) << (cpuTime() - dump_start_time) << endl;
-}
-
-void set_config(ArjunNS::Arjun* arj) {
-    cout << "c [arjun] using seed: " << conf.seed << endl;
-    arj->set_verbosity(conf.verb);
-    arj->set_seed(conf.seed);
-    arj->set_fast_backw(conf.fast_backw);
-    arj->set_distill(conf.distill);
-    arj->set_specified_order_fname(conf.specified_order_fname);
-    arj->set_intree(conf.intree);
-    arj->set_bve_pre_simplify(conf.bve_pre_simplify);
-    arj->set_unknown_sort(conf.unknown_sort);
-    if (gates) {
-      arj->set_or_gate_based(conf.or_gate_based);
-      arj->set_ite_gate_based(conf.ite_gate_based);
-      arj->set_xor_gates_based(conf.xor_gates_based);
-      arj->set_irreg_gate_based(conf.irreg_gate_based);
-    } else {
-      cout << "c NOTE: all gates are turned off due to `--gates 0`" << endl;
-      arj->set_or_gate_based   (0);
-      arj->set_ite_gate_based  (0);
-      arj->set_xor_gates_based (0);
-      arj->set_irreg_gate_based(0);
-    }
-    arj->set_no_gates_below(conf.no_gates_below);
-    arj->set_probe_based(conf.probe_based);
-    arj->set_backward(conf.backward);
-    arj->set_backw_max_confl(conf.backw_max_confl);
-    arj->set_gauss_jordan(conf.gauss_jordan);
-    arj->set_backbone_simpl(conf.backbone_simpl);
-    arj->set_backbone_simpl_max_confl(conf.backbone_simpl_max_confl);
-    arj->set_simp(conf.simp);
-    arj->set_empty_occs_based(conf.empty_occs_based);
-    arj->set_bve_during_elimtofile(conf.bve_during_elimtofile);
-    arj->set_backbone_simpl_cmsgen(conf.backbone_simpl_cmsgen);
-}
-
-void do_it_again(vector<uint32_t>& indep_vars)
-{
-    ArjunNS::Arjun arjun2;
-    set_config(&arjun2);
-    arjun2.new_vars(arjun->get_orig_num_vars());
-    arjun2.set_starting_sampling_set(indep_vars);
-    arjun2.set_irreg_gate_based(1);
-    vector<Lit> cl;
-    for(const auto& l: arjun->get_orig_cnf()) {
-        if (l != lit_Undef) {
-            assert(l.var() < arjun->get_orig_num_vars());
-            cl.push_back(l);
-            continue;
-        }
-        arjun2.add_clause(cl);
-        cl.clear();
-    }
-    indep_vars = arjun2.get_indep_set();
-    print_final_indep_set(indep_vars, arjun->get_empty_occ_sampl_vars());
+    auto ret = arjun->get_fully_simplified_renumbered_cnf(sampl_set, empty_occs, orig_num_vars);
+    dump_cnf(std::get<0>(ret), std::get<1>(ret), std::get<2>(ret));
+    cout << "c [arjun] Done dumping. T: " << (cpuTime() - dump_start_time) << endl;
 }
 
 int main(int argc, char** argv)
@@ -430,7 +316,9 @@ int main(int argc, char** argv)
     string command_line;
     for(int i = 0; i < argc; i++) {
         command_line += string(argv[i]);
-        if (i+1 < argc) command_line += " ";
+        if (i+1 < argc) {
+            command_line += " ";
+        }
     }
 
     add_supported_options(argc, argv);
@@ -445,58 +333,55 @@ int main(int argc, char** argv)
     << endl;
 
     double starTime = cpuTime();
-    set_config(arjun);
+    cout << "c [arjun] using seed: " << conf.seed << endl;
+    arjun->set_verbosity(conf.verb);
+    arjun->set_seed(conf.seed);
+    arjun->set_fast_backw(conf.fast_backw);
+    arjun->set_distill(conf.distill);
+    arjun->set_regularly_simplify(conf.regularly_simplify);
+    arjun->set_intree(conf.intree);
+    arjun->set_guess(conf.guess);
+    arjun->set_pre_simplify(conf.pre_simplify);
+    arjun->set_incidence_sort(conf.incidence_sort);
+    arjun->set_or_gate_based(conf.or_gate_based);
+    arjun->set_ite_gate_based(conf.ite_gate_based);
+    arjun->set_xor_gates_based(conf.xor_gates_based);
+    arjun->set_probe_based(conf.probe_based);
+    arjun->set_forward(conf.forward);
+    arjun->set_backward(conf.backward);
+    arjun->set_assign_fwd_val(conf.assign_fwd_val);
+    arjun->set_backw_max_confl(conf.backw_max_confl);
+    arjun->set_gauss_jordan(conf.gauss_jordan);
+    arjun->set_fwd_group(conf.forward_group);
+    arjun->set_backbone_simpl(conf.backbone_simpl);
+    arjun->set_irreg_gate_based(conf.irreg_gate_based);
+    arjun->set_backbone_simpl_max_confl(conf.backbone_simpl_max_confl);
+    arjun->set_simp(conf.simp);
+    arjun->set_empty_occs_based(conf.empty_occs_based);
+    arjun->set_mirror_empty(conf.mirror_empty);
+//     if (polar_mode == 1) {
+//         arjun->set_polar_mode(CMSat::PolarityMode::polarmode_neg);
+//     }
+    //signal(SIGINT,signal_handler);
 
     //parsing the input
-    if (vm.count("input") == 0
-            || vm["input"].as<vector<string>>().size() == 0
-            || vm["input"].as<vector<string>>().size() > 3) {
-        cout << "ERROR: you must pass an INPUT, optionally an OUTPUT, and optionally a RECOVER files as parameters" << endl;
+    if (vm.count("input") == 0) {
+        cout << "ERROR: you must pass a file" << endl;
         exit(-1);
     }
-
-    const string inp = vm["input"].as<vector<string>>()[0];
-    if (vm["input"].as<vector<string>>().size() >= 2) {
-        elimtofile = vm["input"].as<vector<string>>()[1];
-    }
-    if (vm["input"].as<vector<string>>().size() >= 3) {
-        recover_file = vm["input"].as<vector<string>>()[2];
-    }
+    const string inp = vm["input"].as<string>();
     readInAFile(inp);
     cout << "c [arjun] original sampling set size: " << orig_sampling_set_size << endl;
 
-    vector<uint32_t> indep_vars = arjun->get_indep_set();
-    print_final_indep_set(indep_vars, arjun->get_empty_occ_sampl_vars());
-    /* do_it_again(indep_vars); // in case we want to try to run Arjun again, not useful */
+    uint32_t orig_num_vars = arjun->nVars();
+    vector<uint32_t> sampl_set = arjun->get_indep_set();
+    print_final_indep_set(sampl_set, arjun->get_empty_occ_sampl_vars());
     cout << "c [arjun] finished "
-        << "T: " << std::setprecision(2) << std::fixed << (cpuTime() - starTime)
-        << endl;
+    << "T: " << std::setprecision(2) << std::fixed << (cpuTime() - starTime)
+    << endl;
 
     if (!elimtofile.empty()) {
-        if (conf.simp) {
-            elim_to_file(indep_vars);
-        } else {
-            uint32_t num_cls = 0;
-            const auto& cnf = arjun->get_orig_cnf();
-            for(const auto& l: cnf) if (l == lit_Undef) num_cls++;
-            std::ofstream outf;
-            outf.open(elimtofile.c_str(), std::ios::out);
-            outf << "p cnf " << arjun->get_orig_num_vars() << " " << num_cls << endl;
-
-            //Add projection
-            outf << "c ind ";
-            std::sort(indep_vars.begin(), indep_vars.end());
-            for(const auto& v: indep_vars) {
-                assert(v < arjun->get_orig_num_vars());
-                outf << v+1  << " ";
-            }
-            outf << "0\n";
-
-            for(const auto& l: cnf) {
-                if (l == lit_Undef) outf << "0\n";
-                else outf << l << " ";
-            }
-        }
+        elim_to_file(sampl_set, arjun->get_empty_occ_sampl_vars(), orig_num_vars);
     }
 
     delete arjun;

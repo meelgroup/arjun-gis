@@ -28,29 +28,10 @@ THE SOFTWARE.
 #include <utility>
 #include <string>
 #include <tuple>
-#ifdef CMS_LOCAL_BUILD
-#include "cryptominisat.h"
-#else
 #include <cryptominisat5/cryptominisat.h>
-#endif
+#include <cryptominisat5/solvertypesmini.h>
 
 namespace ArjunNS {
-    struct SimplifiedCNF {
-        std::vector<std::vector<CMSat::Lit>> cnf;
-        std::vector<uint32_t> sampling_vars;
-        uint32_t nvars;
-        uint32_t empty_occs;
-        std::string sol_ext_data;
-
-        void clear() {
-            cnf.clear();
-            sampling_vars.clear();
-            nvars = 0;
-            empty_occs = 0;
-            sol_ext_data.clear();
-        }
-    };
-
     struct ArjPrivateData;
     #ifdef _WIN32
     class __declspec(dllexport) Arjun
@@ -61,9 +42,9 @@ namespace ArjunNS {
     public:
         Arjun();
         ~Arjun();
-        static std::string get_version_info();
-        static std::string get_compilation_env();
-        static std::string get_solver_version_info();
+        std::string get_version_info();
+        std::string get_compilation_env();
+        std::string get_solver_version_info();
 
         // Adding CNF
         uint32_t nVars();
@@ -84,20 +65,35 @@ namespace ArjunNS {
         void varreplace();
         std::vector<uint32_t> get_empty_occ_sampl_vars() const;
 
+        // by anna; For group independent support
+        /** by anna; maps variable name to the index of the variable group that
+         * it is a member of. */
+        std::vector<uint32_t> var2var_group;
+        /** by anna; maps variable group index to the variable names that are
+         * members of that group. */
+        std::vector<std::vector<uint32_t>> var_groups;
+        /** by anna */
+        void set_variable_groups(
+          const std::vector<uint32_t>& _var2var_group,
+          const std::vector<std::vector<uint32_t>>& _var_groups);
+        /** by anna */
+        void set_group_independent_support(uint32_t group_ind);
+        /** by anna; for debugging purposes only. TODO: remove when done. */
+        void print_var_groups(); // by anna
+
         //Get clauses
         void start_getting_small_clauses(uint32_t max_len, uint32_t max_glue, bool red = true);
         bool get_next_small_clause(std::vector<CMSat::Lit>& ret); //returns FALSE if no more
         void end_getting_small_clauses();
-        const std::vector<CMSat::Lit> get_internal_cnf(uint32_t& num_cls) const;
-        SimplifiedCNF get_fully_simplified_renumbered_cnf(
-            const std::vector<uint32_t>& sampl_vars,
-            const bool sparsify = true,
-            const bool renumber = true,
-            const bool need_sol_extend = false);
+        const std::vector<CMSat::Lit> get_simplified_cnf() const;
+        std::tuple<std::pair<std::vector<std::vector<CMSat::Lit>>, uint32_t>, std::vector<uint32_t>, uint32_t>
+            get_fully_simplified_renumbered_cnf(
+            const std::vector<uint32_t>& sampl_set,
+            const std::vector<uint32_t>& empty_vars,
+            const uint32_t orig_num_vars);
         const std::vector<CMSat::BNN*>& get_bnns() const;
         std::vector<CMSat::Lit> get_zero_assigned_lits() const;
         std::vector<std::pair<CMSat::Lit, CMSat::Lit> > get_all_binary_xors() const;
-        const std::vector<CMSat::Lit>& get_orig_cnf();
 
         //Set config
         void set_seed(uint32_t seed);
@@ -105,16 +101,20 @@ namespace ArjunNS {
         void set_fast_backw(bool fast_backw);
         void set_distill(bool distill);
         void set_intree(bool intree);
+        void set_guess(bool guess);
         void set_simp(bool simp);
-        void set_bve_pre_simplify(bool bve_pre_simp);
-        void set_unknown_sort(uint32_t unknown_sort);
-        void set_incidence_count(uint32_t incidence_count);
+        void set_pre_simplify(bool simp);
+        void set_incidence_sort(uint32_t incidence_sort);
         void set_or_gate_based(bool or_gate_based);
         void set_xor_gates_based(bool xor_gates_based);
         void set_probe_based(bool probe_based);
+        void set_forward(bool forward);
         void set_backward(bool backward);
+        void set_assign_fwd_val(bool assign_fwd_val);
         void set_backw_max_confl(uint32_t backw_max_confl);
         void set_gauss_jordan(bool gauss_jordan);
+        void set_regularly_simplify(bool reg_simp);
+        void set_fwd_group(uint32_t forward_group);
         void set_find_xors(bool find_xors);
         void set_backbone_simpl(bool backbone_simpl);
         void set_ite_gate_based(bool ite_gate_based);
@@ -122,42 +122,36 @@ namespace ArjunNS {
         void set_gate_sort_special(bool gate_sort_special);
         void set_backbone_simpl_max_confl(uint64_t backbone_simpl_max_confl);
         //void set_polar_mode(CMSat::PolarityMode mode);
-        void set_no_gates_below(double no_gates_below);
         void set_pred_forever_cutoff(int pred_forever_cutoff = -1);
         void set_every_pred_reduce(int every_pred_reduce = -1);
         void set_empty_occs_based(const bool empty_occs_based);
-        void set_specified_order_fname(std::string specified_order_fname);
-        void set_bce(const bool bce);
-        void set_bve_during_elimtofile(const bool);
-        void set_backbone_simpl_cmsgen(const bool);
+        void set_mirror_empty(const bool mirror_empty);
 
         //Get config
-        bool get_empty_occs_based() const;
-        std::string get_specified_order_fname() const;
-        double get_no_gates_below() const;
-        bool get_simp() const;
         uint32_t get_verbosity() const;
         bool get_fast_backw() const;
         bool get_distill() const;
         bool get_intree() const;
-        bool get_bve_pre_simplify() const;
-        uint32_t get_incidence_count() const;
-        uint32_t get_unknown_sort() const;
+        bool get_guess() const;
+        bool get_pre_simplify() const;
+        uint32_t get_incidence_sort() const;
         bool get_or_gate_based() const;
         bool get_xor_gates_based() const;
         bool get_probe_based() const;
+        bool get_forward() const;
         bool get_backward() const;
+        bool get_assign_fwd_val() const;
         uint32_t get_backw_max_confl() const;
         bool get_gauss_jordan() const;
+        bool get_regularly_simplify() const;
+        uint32_t get_fwd_group() const;
         bool get_find_xors() const;
         bool get_backbone_simpl() const;
         bool get_ite_gate_based() const;
         bool get_irreg_gate_based() const;
         bool get_gate_sort_special() const;
-        uint64_t get_backbone_simpl_max_confl() const;
-        bool get_bce() const;
-        bool get_bve_during_elimtofile() const;
-        bool get_backbone_simpl_cmsgen() const;
+
+        long unsigned get_backbone_simpl_max_confl() const;
 
     private:
         ArjPrivateData* arjdata = NULL;

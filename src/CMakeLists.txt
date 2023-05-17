@@ -1,4 +1,5 @@
 # Copyright (c) 2017, Mate Soos
+#               2022, Anna L.D. Latour
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -42,118 +43,58 @@ endif()
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/GitSHA1.cpp.in" "${CMAKE_CURRENT_BINARY_DIR}/GitSHA1.cpp" @ONLY)
 
-add_library(arjun
+add_library(arjun-gis
+    forward.cpp
     backward.cpp
+    guess.cpp
     simplify.cpp
     common.cpp
     arjun.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/GitSHA1.cpp
 )
 
-if (louvain_communities_FOUND)
-    target_link_libraries(arjun
-        LINK_PUBLIC ${LOUVAIN_COMMUNITIES_LIBRARIES}
-        LINK_PUBLIC ${CRYPTOMINISAT5_LIBRARIES}
-    )
-else()
-    target_link_libraries(arjun
-        LINK_PUBLIC ${CRYPTOMINISAT5_LIBRARIES}
-    )
-endif()
+    add_executable(arjun-gis-bin
+    main.cpp
+)
 
-
-if (EMSCRIPTEN)
-    add_executable(arjun-bin
-        main_emscripten.cpp
-    )
-
-    set_target_properties(arjun-bin
-        PROPERTIES
-        OUTPUT_NAME arjun
-        LINK_FLAGS "-s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -s EXTRA_EXPORTED_RUNTIME_METHODS='[\"ccall\", \"cwrap\"]'  -s LINKABLE=1 -s EXPORT_ALL=1 --pre-js ${CMAKE_CURRENT_SOURCE_DIR}/pre.js"
-    )
-
-    SET_SOURCE_FILES_PROPERTIES(main_emscripten.cpp
-        PROPERTIES COMPILE_FLAGS "-s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -s EXTRA_EXPORTED_RUNTIME_METHODS='[\"ccall\", \"cwrap\"]'  -s LINKABLE=1 -s EXPORT_ALL=1"
-    )
-else()
-    add_executable(arjun-bin
-        main.cpp
-    )
-
-    add_executable(arjun-example
-        example.cpp
-    )
-
-if (ARJUN_SERIALIZE)
-    add_executable(solextend
-        solextend.cpp
-    )
-endif()
-
-    set(arjun_bin_exec_link_libs
-        ${Boost_LIBRARIES}
-    )
-endif()
+set(arjun-gis_bin_exec_link_libs
+    ${Boost_LIBRARIES}
+)
 
 IF (ZLIB_FOUND)
-    SET(arjun_bin_exec_link_libs ${arjun_bin_exec_link_libs} ${ZLIB_LIBRARY})
+    SET(arjun-gis_bin_exec_link_libs ${arjun-gis_bin_exec_link_libs} ${ZLIB_LIBRARY})
 ENDIF()
 
-set_target_properties(arjun PROPERTIES
-    PUBLIC_HEADER "${arjun_public_headers}"
+set_target_properties(arjun-gis PROPERTIES
+    PUBLIC_HEADER "${arjun-gis_public_headers}"
     VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
     SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
 )
 
-set_target_properties(arjun-bin PROPERTIES
-    OUTPUT_NAME arjun
+set_target_properties(arjun-gis-bin PROPERTIES
+    OUTPUT_NAME arjun-gis
     RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}
     INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 
-target_link_libraries(arjun-bin
-    ${arjun_bin_exec_link_libs}
-    arjun
+target_link_libraries(arjun-gis-bin
+    ${arjun-gis_bin_exec_link_libs}
+    arjun-gis
+    ${CRYPTOMINISAT5_LIBRARIES}
 )
 
-
-set_target_properties(arjun-example PROPERTIES
-    OUTPUT_NAME example
-    RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}
-    INSTALL_RPATH_USE_LINK_PATH TRUE)
-
-
-target_link_libraries(arjun-example
-    ${arjun_bin_exec_link_libs}
-    arjun
-)
-
-if (ARJUN_SERIALIZE)
-set_target_properties(solextend PROPERTIES
-    OUTPUT_NAME solextend
-    RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}
-    INSTALL_RPATH_USE_LINK_PATH TRUE)
-
-target_link_libraries(solextend
-    LINK_PUBLIC ${CRYPTOMINISAT5_LIBRARIES}
-    ${arjun_bin_exec_link_libs}
-    arjun
-)
-endif()
-
-arjun_add_public_header(
-    arjun ${CMAKE_CURRENT_SOURCE_DIR}/arjun.h )
+arjun_gis_add_public_header(
+    arjun-gis ${CMAKE_CURRENT_SOURCE_DIR}/arjun.h )
 
 # -----------------------------------------------------------------------------
 # Copy public headers into build directory include directory.
-# The arjunConfig.cmake we generate in the build directory depends on
+# The arjun-gisConfig.cmake we generate in the build directory depends on
 # this.
 # -----------------------------------------------------------------------------
-set(HEADER_DEST "${PROJECT_BINARY_DIR}/include/arjun")
+set(HEADER_DEST "${PROJECT_BINARY_DIR}/include/arjun-gis")
 add_custom_target(CopyPublicHeaders ALL)
-get_target_property(arjun_public_headers arjun PUBLIC_HEADER)
-foreach(public_header ${arjun_public_headers})
+get_target_property(arjun-gis_public_headers arjun-gis PUBLIC_HEADER)
+foreach(public_header ${arjun-gis_public_headers})
     get_filename_component(HEADER_NAME ${public_header} NAME)
     add_custom_command(TARGET CopyPublicHeaders PRE_BUILD
                        COMMAND ${CMAKE_COMMAND} -E make_directory
@@ -168,15 +109,15 @@ foreach(public_header ${arjun_public_headers})
 endforeach()
 
 
-install(TARGETS arjun
-    EXPORT ${ARJUN_EXPORT_NAME}
+install(TARGETS arjun-gis
+    EXPORT ${ARJUN_GIS_EXPORT_NAME}
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-    PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/arjun"
+    PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/arjun-gis"
 )
 
-install(TARGETS arjun-bin
-    EXPORT ${ARJUN_EXPORT_NAME}
+install(TARGETS arjun-gis-bin
+    EXPORT ${ARJUN_GIS_EXPORT_NAME}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )

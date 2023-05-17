@@ -1,7 +1,9 @@
 /*
  Arjun
 
- Copyright (c) 2020, Mate Soos and Kuldeep S. Meel. All rights reserved.
+ Copyright (c) 2020, Mate Soos and Kuldeep S. Meel. 
+	       2022, Anna L.D. Latour.
+All rights reserved.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -23,16 +25,16 @@
  */
 
 #include "arjun.h"
+#include <cryptominisat5/cryptominisat.h>
+#include "cryptominisat5/dimacsparser.h"
+#include "cryptominisat5/streambuffer.h"
 #include "config.h"
 #include "common.h"
 #include "GitSHA1.h"
 #include <utility>
 #include <tuple>
-#include <limits>
 
 using std::pair;
-using std::numeric_limits;
-using namespace ArjunInt;
 
 #if defined _WIN32
     #define DLL_PUBLIC __declspec(dllexport)
@@ -40,16 +42,6 @@ using namespace ArjunInt;
     #define DLL_PUBLIC __attribute__ ((visibility ("default")))
     #define DLL_LOCAL  __attribute__ ((visibility ("hidden")))
 #endif
-
-#define set_get_macro(TYPE, NAME) \
-DLL_PUBLIC void Arjun::set_##NAME (TYPE NAME) \
-{ \
-    arjdata->common.conf.NAME = NAME; \
-} \
-DLL_PUBLIC TYPE Arjun::get_##NAME () const \
-{ \
-    return arjdata->common.conf.NAME; \
-} \
 
 namespace ArjunNS {
     struct ArjPrivateData {
@@ -69,6 +61,13 @@ DLL_PUBLIC Arjun::~Arjun()
 {
     delete arjdata;
 }
+
+// DLL_PUBLIC void Arjun::set_projection_set(const vector<uint32_t>& vars)
+// {
+//     //arjdata->conf.sampling_set = vars;
+//     assert(false);
+// }
+
 
 DLL_PUBLIC uint32_t Arjun::nVars() {
     return arjdata->common.solver->nVars();
@@ -91,7 +90,6 @@ DLL_PUBLIC bool Arjun::add_clause(const vector<CMSat::Lit>& lits)
 
 DLL_PUBLIC bool Arjun::add_xor_clause(const vector<uint32_t>& vars, bool rhs)
 {
-    assert(false && "Funnily enough this does NOT work. The XORs would generate a BVA variable, and that would then not be returned as part of the simplified CNF. We could calculate a smaller independent set, but that's all.");
     return arjdata->common.solver->add_xor_clause(vars, rhs);
 }
 
@@ -123,34 +121,26 @@ DLL_PUBLIC string Arjun::get_version_info()
 
 DLL_PUBLIC std::string Arjun::get_solver_version_info()
 {
-    return CMSat::SATSolver::get_text_version_info();
+    return arjdata->common.solver->get_text_version_info();
 }
 
 DLL_PUBLIC std::string Arjun::get_compilation_env()
 {
-    return ArjunIntNS::get_compilation_env();
-}
-
-DLL_PUBLIC const std::vector<Lit>& Arjun::get_orig_cnf()
-{
-    return arjdata->common.orig_cnf;
-}
-
-template <class T>
-void check_sanity_sampling_vars(T vars, const uint32_t nvars)
-{
-    for(const auto& v: vars) if (v >= nvars) {
-        cout << "ERROR: sampling set provided is incorrect, it has a variable in it: " << v+1 << " that is larger than the total number of variables: " << nvars << endl;
-        exit(-1);
-    }
+    return arjdata->common.solver->get_compilation_env();
 }
 
 DLL_PUBLIC vector<uint32_t> Arjun::get_indep_set()
 {
     double starTime = cpuTime();
-    arjdata->common.orig_cnf = arjdata->common.get_cnf();
-    check_sanity_sampling_vars(*arjdata->common.sampling_set, get_orig_num_vars());
     if (!arjdata->common.preproc_and_duplicate()) goto end;
+
+    // Guess
+    if (arjdata->common.conf.guess) arjdata->common.run_guess();
+
+    // Forward
+    if (arjdata->common.conf.forward) {
+        arjdata->common.forward_round(5000000, arjdata->common.conf.forward_group, 0);
+    }
 
     //Backward
     if (arjdata->common.conf.backward) {
@@ -207,7 +197,6 @@ DLL_PUBLIC uint32_t Arjun::get_orig_num_vars() const
 DLL_PUBLIC void Arjun::set_verbosity(uint32_t verb)
 {
     arjdata->common.conf.verb = verb;
-    arjdata->common.solver->set_verbosity(verb);
 }
 
 DLL_PUBLIC void Arjun::set_seed(uint32_t seed)
@@ -215,48 +204,206 @@ DLL_PUBLIC void Arjun::set_seed(uint32_t seed)
     arjdata->common.random_source.seed(seed);
 }
 
+
+DLL_PUBLIC void Arjun::set_fast_backw(bool fast_backw)
+{
+    arjdata->common.conf.fast_backw = fast_backw;
+}
+
+DLL_PUBLIC void Arjun::set_distill(bool distill)
+{
+    arjdata->common.conf.distill = distill;
+}
+
+DLL_PUBLIC void Arjun::set_intree(bool intree)
+{
+    arjdata->common.conf.intree = intree;
+}
+
+DLL_PUBLIC void Arjun::set_guess(bool guess)
+{
+    arjdata->common.conf.guess = guess;
+}
+
+DLL_PUBLIC void Arjun::set_pre_simplify(bool simp)
+{
+    arjdata->common.conf.pre_simplify = simp;
+}
+
+DLL_PUBLIC void Arjun::set_simp(bool simp)
+{
+    arjdata->common.conf.simp = simp;
+}
+
+DLL_PUBLIC void Arjun::set_incidence_sort(uint32_t incidence_sort)
+{
+    arjdata->common.conf.incidence_sort = incidence_sort;
+}
+
+DLL_PUBLIC void Arjun::set_or_gate_based(bool or_gate_based)
+{
+    arjdata->common.conf.or_gate_based = or_gate_based;
+}
+
+DLL_PUBLIC void Arjun::set_xor_gates_based(bool xor_gates_based)
+{
+    arjdata->common.conf.xor_gates_based = xor_gates_based;
+}
+
+DLL_PUBLIC void Arjun::set_probe_based(bool probe_based)
+{
+    arjdata->common.conf.probe_based = probe_based;
+}
+
+DLL_PUBLIC void Arjun::set_forward(bool forward)
+{
+    arjdata->common.conf.forward = forward;
+}
+
+DLL_PUBLIC void Arjun::set_backward(bool backward)
+{
+    //assert(backward && "We MUST have backward or we cannot work");
+    arjdata->common.conf.backward = backward;
+}
+
+DLL_PUBLIC void Arjun::set_assign_fwd_val(bool assign_fwd_val)
+{
+    arjdata->common.conf.assign_fwd_val = assign_fwd_val;
+}
+
+DLL_PUBLIC void Arjun::set_backw_max_confl(uint32_t backw_max_confl)
+{
+    arjdata->common.conf.backw_max_confl = backw_max_confl;
+}
+
+DLL_PUBLIC void Arjun::set_backbone_simpl_max_confl(uint64_t backbone_simpl_max_confl)
+{
+    arjdata->common.conf.backbone_simpl_max_confl = backbone_simpl_max_confl;
+}
+
+DLL_PUBLIC long unsigned Arjun::get_backbone_simpl_max_confl() const
+{
+    return arjdata->common.conf.backbone_simpl_max_confl;
+}
+
 DLL_PUBLIC uint32_t Arjun::get_verbosity() const
 {
     return arjdata->common.conf.verb;
 }
 
-set_get_macro(bool, fast_backw)
-set_get_macro(bool, distill)
-set_get_macro(bool, intree)
-set_get_macro(bool, bve_pre_simplify)
-set_get_macro(bool, simp)
-set_get_macro(uint32_t, unknown_sort)
-set_get_macro(uint32_t, incidence_count)
-set_get_macro(bool, or_gate_based)
-set_get_macro(bool, xor_gates_based)
-set_get_macro(bool, probe_based)
-set_get_macro(bool, backward)
-set_get_macro(uint32_t, backw_max_confl)
-set_get_macro(uint64_t, backbone_simpl_max_confl)
-set_get_macro(bool, gauss_jordan)
-set_get_macro(bool, ite_gate_based)
-set_get_macro(bool, irreg_gate_based)
-set_get_macro(double, no_gates_below)
-set_get_macro(std::string, specified_order_fname)
-set_get_macro(bool, backbone_simpl)
-set_get_macro(bool, empty_occs_based)
-set_get_macro(bool, bce)
-set_get_macro(bool, bve_during_elimtofile)
-set_get_macro(bool, backbone_simpl_cmsgen)
-
-DLL_PUBLIC vector<uint32_t> Arjun::get_empty_occ_sampl_vars() const
+DLL_PUBLIC bool Arjun::get_fast_backw() const
 {
-    return arjdata->common.empty_occs;
+    return arjdata->common.conf.fast_backw;
 }
 
-DLL_PUBLIC void Arjun::set_pred_forever_cutoff(int pred_forever_cutoff)
+DLL_PUBLIC bool Arjun::get_distill() const
 {
-    arjdata->common.solver->set_pred_forever_cutoff(pred_forever_cutoff);
+    return arjdata->common.conf.distill;
 }
 
-DLL_PUBLIC void Arjun::set_every_pred_reduce(int every_pred_reduce)
+DLL_PUBLIC bool Arjun::get_intree() const
 {
-    arjdata->common.solver->set_every_pred_reduce(every_pred_reduce);
+    return arjdata->common.conf.intree;
+}
+
+DLL_PUBLIC bool Arjun::get_guess() const
+{
+    return arjdata->common.conf.guess;
+}
+
+DLL_PUBLIC bool Arjun::get_pre_simplify() const
+{
+    return arjdata->common.conf.pre_simplify;
+}
+
+DLL_PUBLIC uint32_t Arjun::get_incidence_sort() const
+{
+    return arjdata->common.conf.incidence_sort;
+}
+
+DLL_PUBLIC bool Arjun::get_or_gate_based() const
+{
+    return arjdata->common.conf.or_gate_based;
+}
+
+DLL_PUBLIC bool Arjun::get_xor_gates_based() const
+{
+    return arjdata->common.conf.xor_gates_based;
+}
+
+DLL_PUBLIC bool Arjun::get_probe_based() const
+{
+    return arjdata->common.conf.probe_based;
+}
+
+DLL_PUBLIC bool Arjun::get_forward() const
+{
+    return arjdata->common.conf.forward;
+}
+
+DLL_PUBLIC bool Arjun::get_backward() const
+{
+    return arjdata->common.conf.backward;
+}
+
+DLL_PUBLIC bool Arjun::get_assign_fwd_val() const
+{
+    return arjdata->common.conf.assign_fwd_val;
+}
+
+DLL_PUBLIC uint32_t Arjun::get_backw_max_confl() const
+{
+    return arjdata->common.conf.backw_max_confl;
+}
+
+DLL_PUBLIC void Arjun::set_gauss_jordan(bool gauss_jordan)
+{
+    arjdata->common.conf.gauss_jordan = gauss_jordan;
+}
+
+DLL_PUBLIC bool Arjun::get_gauss_jordan() const
+{
+    return arjdata->common.conf.gauss_jordan;
+}
+
+DLL_PUBLIC void Arjun::set_regularly_simplify(bool reg_simp)
+{
+    arjdata->common.conf.regularly_simplify = reg_simp;
+}
+
+DLL_PUBLIC bool Arjun::get_regularly_simplify() const
+{
+    return arjdata->common.conf.regularly_simplify;
+}
+
+DLL_PUBLIC void Arjun::set_fwd_group(uint32_t forward_group)
+{
+    arjdata->common.conf.forward_group = forward_group;
+}
+
+DLL_PUBLIC uint32_t Arjun::get_fwd_group() const
+{
+    return arjdata->common.conf.forward_group;
+}
+
+DLL_PUBLIC void Arjun::set_ite_gate_based(bool ite_gate_based)
+{
+    arjdata->common.conf.ite_gate_based = ite_gate_based;
+}
+
+DLL_PUBLIC bool Arjun::get_ite_gate_based() const
+{
+    return arjdata->common.conf.ite_gate_based;
+}
+
+DLL_PUBLIC void Arjun::set_irreg_gate_based(const bool irreg_gate_based)
+{
+    arjdata->common.conf.irreg_gate_based = irreg_gate_based;
+}
+
+DLL_PUBLIC bool Arjun::get_irreg_gate_based() const
+{
+    return arjdata->common.conf.irreg_gate_based;
 }
 
 DLL_PUBLIC vector<Lit> Arjun::get_zero_assigned_lits() const
@@ -287,6 +434,16 @@ DLL_PUBLIC std::vector<std::pair<CMSat::Lit, CMSat::Lit> > Arjun::get_all_binary
     return ret;
 }
 
+DLL_PUBLIC void Arjun::set_backbone_simpl(bool backbone_simpl)
+{
+    arjdata->common.conf.backbone_simpl = backbone_simpl;
+}
+
+DLL_PUBLIC bool Arjun::get_backbone_simpl() const
+{
+    return arjdata->common.conf.backbone_simpl;
+}
+
 DLL_PUBLIC void Arjun::varreplace()
 {
     //arjdata->common.solver->backbone_simpl();
@@ -294,11 +451,15 @@ DLL_PUBLIC void Arjun::varreplace()
     arjdata->common.solver->simplify(NULL, &tmp);
 }
 
-DLL_PUBLIC const vector<Lit> Arjun::get_internal_cnf(uint32_t& num_cls) const
+DLL_PUBLIC vector<uint32_t> Arjun::get_empty_occ_sampl_vars() const
+{
+    return arjdata->common.empty_occs;
+}
+
+DLL_PUBLIC const vector<Lit> Arjun::get_simplified_cnf() const
 {
     vector<Lit> cnf;
     bool ret = true;
-    num_cls = 0;
 
     arjdata->common.solver->start_getting_small_clauses(
         std::numeric_limits<uint32_t>::max(),
@@ -307,7 +468,9 @@ DLL_PUBLIC const vector<Lit> Arjun::get_internal_cnf(uint32_t& num_cls) const
     vector<Lit> clause;
     while (ret) {
         ret = arjdata->common.solver->get_next_small_clause(clause);
-        if (!ret) break;
+        if (!ret) {
+            break;
+        }
 
         bool ok = true;
         for(auto l: clause) {
@@ -320,181 +483,32 @@ DLL_PUBLIC const vector<Lit> Arjun::get_internal_cnf(uint32_t& num_cls) const
         if (ok) {
             for(auto const& l: clause) cnf.push_back(l);
             cnf.push_back(lit_Undef);
-            num_cls++;
         }
     }
     arjdata->common.solver->end_getting_small_clauses();
+
+    auto units = arjdata->common.solver->get_zero_assigned_lits();
+    for(const auto& unit: units) {
+        if (unit.var() < arjdata->common.orig_num_vars) {
+            cnf.push_back(unit);
+            cnf.push_back(lit_Undef);
+        }
+    }
+
     return cnf;
 }
 
-static bool backbone_simpl(int verb, uint64_t backbone_simpl_max_confl,
-        bool backbone_simpl_cmsgen, SATSolver* solver)
+std::pair<vector<vector<Lit>>, uint32_t> get_simplified_renumbered_cnf(SATSolver* solver, vector<uint32_t>& sampl_set)
 {
-    if (verb) {
-        cout << "c [backbone-simpl] starting backbone simplification..." << endl;
-    }
-    uint64_t last_sum_conflicts = 0;
-    int64_t max_confl = backbone_simpl_max_confl;
-
-    double myTime = cpuTime();
-    uint32_t orig_vars_set = solver->get_zero_assigned_lits().size();
-    bool finished = false;
-    Lit l;
-    uint32_t undefs = 0;
-
-    vector<Lit> tmp_clause;
-    vector<Lit> assumps;
-    vector<lbool> model;
-    uint32_t num_seen_flipped = 0;
-    vector<char> seen_flipped;
-    seen_flipped.resize(solver->nVars(), 0);
-    const auto old_polar_mode = solver->get_polarity_mode();
-    const auto old_verb = solver->get_verbosity();
-    solver->set_verbosity(0);
-
-    vector<Lit> zero_set = solver->get_zero_assigned_lits();
-    for(auto const& l2: zero_set) seen_flipped[l2.var()] = 1;
-
-    if (backbone_simpl_cmsgen) {
-        //CMSGen-based seen_flipped detection, so we don't need to query so much
-        SATSolver s2;
-        s2.set_up_for_sample_counter(100);
-        s2.new_vars(solver->nVars());
-        s2.set_verbosity(0);
-        bool ret = true;
-        solver->start_getting_small_clauses(
-            std::numeric_limits<uint32_t>::max(),
-            std::numeric_limits<uint32_t>::max(),
-            false);
-        vector<Lit> clause;
-        while (ret) {
-            ret = solver->get_next_small_clause(clause);
-            if (!ret) break;
-            s2.add_clause(clause);
-        }
-        solver->end_getting_small_clauses();
-
-        uint64_t last_num_conflicts = 0;
-        int64_t remaining_confls = backbone_simpl_max_confl;
-        s2.set_max_confl(remaining_confls/4);
-        uint32_t num_runs = 0;
-        auto s2_ret = s2.solve();
-        remaining_confls -= (s2.get_sum_conflicts() - last_num_conflicts);
-        if (s2_ret == l_True) {
-            model = s2.get_model();
-            for(uint32_t i = 0; i < 30 && remaining_confls > 0; i++) {
-                last_num_conflicts = s2.get_sum_conflicts();
-                s2.set_max_confl(remaining_confls);
-                s2_ret = s2.solve();
-                remaining_confls -= (s2.get_sum_conflicts() - last_num_conflicts);
-                if (s2_ret == l_Undef) break;
-                num_runs++;
-                const auto& this_model = s2.get_model();
-                for(uint32_t i2 = 0, max = s2.nVars(); i2 < max; i2++) {
-                    if (seen_flipped[i2]) continue;
-                    if (this_model[i2] != model[i2]) {
-                        seen_flipped[i2] = 1;
-                        num_seen_flipped++;
-                    }
-                }
-            }
-        }
-        if (verb) cout
-            << "c [backbone-simpl] num seen flipped: " << num_seen_flipped
-            << " conflicts used: " << print_value_kilo_mega(s2.get_sum_conflicts())
-            << " num runs succeeded: " << num_runs
-            << " T: " << (cpuTime() - myTime) << endl;
-    }
-
-    vector<uint32_t> var_order;
-    for(uint32_t i = 0, max = solver->nVars(); i < max; i++) {
-        if (seen_flipped[i]) continue;
-        var_order.push_back(i);
-    }
-    if (var_order.empty()) return true;
-
-    std::mt19937 g;
-    g.seed(1337);
-    std::shuffle(var_order.begin(), var_order.end(), g);
-
-    solver->set_max_confl(max_confl);
-    max_confl -= solver->get_sum_conflicts();
-    last_sum_conflicts = solver->get_sum_conflicts();
-
-    solver->set_polarity_mode(PolarityMode::polarmode_neg);
-    lbool ret = solver->solve();
-    if (ret == l_False) return false;
-    if (ret == l_Undef || max_confl < 0) goto end;
-    model = solver->get_model();
-
-    for(const uint32_t var: var_order) {
-        if (seen_flipped[var]) continue;
-        l = Lit(var, model[var] == l_False);
-
-        //There is definitely a solution with "l". Let's see if ~l fails.
-        assumps.clear();
-        assumps.push_back(~l);
-        solver->set_max_confl(max_confl/20);
-        ret = solver->solve(&assumps);
-
-        //Update max confl
-        assert(last_sum_conflicts <= solver->get_sum_conflicts());
-        max_confl -= ((int64_t)solver->get_sum_conflicts() - last_sum_conflicts);
-        max_confl -= 100;
-        last_sum_conflicts = solver->get_sum_conflicts();
-
-        if (ret == l_True) {
-            const auto& this_model = solver->get_model();
-            for(uint32_t i2 = 0, max = solver->nVars(); i2 < max; i2++) {
-                if (seen_flipped[i2]) continue;
-                if (this_model[i2] != model[i2]) {
-                    seen_flipped[i2] = 1;
-                    num_seen_flipped++;
-                }
-            }
-        } else if (ret == l_False) {
-            tmp_clause.clear();
-            tmp_clause.push_back(l);
-            if (!solver->add_clause(tmp_clause)) return false;
-        }
-        if (ret == l_Undef) undefs++;
-        if (max_confl < 0) goto end;
-    }
-    finished = true;
-    assert(solver->okay());
-
-    end:
-    uint32_t num_set = solver->get_zero_assigned_lits().size() - orig_vars_set;
-    double time_used = cpuTime() - myTime;
-    solver->set_polarity_mode(old_polar_mode);
-    solver->set_verbosity(old_verb);
-
-    if (verb) {
-        cout << "c [backbone-simpl]"
-        << " finished: " << finished
-        << " undefs: " << undefs
-        << " set: " << num_set
-        << " conflicts used: " << print_value_kilo_mega(solver->get_sum_conflicts())
-        << " conflicts max: " << print_value_kilo_mega(backbone_simpl_max_confl)
-        << " T: " << std::setprecision(2) << time_used
-        << endl;
-    }
-
-    return true;
-}
-
-static void get_simplified_cnf(
-        SATSolver* solver, vector<uint32_t>& sampl_vars, const bool renumber,
-        vector<vector<Lit>>& cnf, uint32_t& nvars)
-{
-    assert(cnf.empty());
+    vector<vector<Lit>> cnf;
     solver->start_getting_small_clauses(
         std::numeric_limits<uint32_t>::max(),
         std::numeric_limits<uint32_t>::max(),
         false, //red
         false, //bva vars
-        renumber); //simplified
-    if (renumber) sampl_vars = solver->translate_sampl_set(sampl_vars);
+        true); //simplified
+
+    sampl_set = solver->translate_sampl_set(sampl_set);
 
     bool ret = true;
     vector<Lit> clause;
@@ -505,66 +519,87 @@ static void get_simplified_cnf(
         }
     }
     solver->end_getting_small_clauses();
-    nvars = renumber ? solver->simplified_nvars() :  solver->nVars();
+    return std::make_pair(cnf, solver->simplified_nvars());
 }
 
-static void fill_solver(
+vector<Lit> fill_solver_no_empty(
+    const vector<uint32_t>& sampl_set,
+    const vector<uint32_t>& empty_vars,
+    const uint32_t orig_num_vars,
     SATSolver& solver,
     Arjun* arjun)
 {
-    assert(solver.nVars() == 0); // Solver here is empty
-    solver.new_vars(arjun->get_orig_num_vars());
+    solver.new_vars(orig_num_vars-empty_vars.size());
+    vector<char> seen(orig_num_vars, 0);
+    vector<uint32_t> mymap;
+    for(auto const& e: empty_vars) {
+        assert(e < orig_num_vars);
+        seen[e] = 1;
+    }
 
-    // Inject original CNF
-    const auto cnf = arjun->get_orig_cnf();
-    vector<Lit> cl;
-    for(const auto& l: cnf) {
+    uint32_t at = 0;
+    for(uint32_t i = 0; i < orig_num_vars; i++) {
+        if (!seen[i]) {
+            mymap.push_back(at);
+            at++;
+        } else {
+            mymap.push_back(numeric_limits<uint32_t>::max());
+        }
+    }
+    assert(at == solver.nVars());
+
+    //NOTE: we can have binary XORs that refer to EMPTY. This is because
+    //      var x (in sampling set) was replaced by var y, which became empty.
+    vector<Lit> tmp;
+    uint32_t sz = 0;
+    bool ok = true;
+    for(const auto& l: arjun->get_simplified_cnf()) {
         if (l != lit_Undef) {
-            assert(l.var() < arjun->get_orig_num_vars());
-            cl.push_back(l);
+            if (seen[l.var()] == 1) ok = false;
+            if (ok) tmp.push_back(Lit(mymap[l.var()], l.sign()));
+            sz++;
             continue;
         }
-        solver.add_clause(cl);
-        cl.clear();
+        if (ok) solver.add_clause(tmp);
+        else assert(sz == 2);
+        tmp.clear();
+        ok = true;
+        sz = 0;
     }
 
-    // inject set vars
-    const auto lits =  arjun->get_zero_assigned_lits();
-    for(const auto& l: lits) {
-        if (l.var() < arjun->get_orig_num_vars()) {
-            cl.clear();
-            cl.push_back(l);
-            solver.add_clause(cl);
-        }
-    }
+    arjun->varreplace();
 
-    // inject bin-xor clauses
     auto bin_xors = arjun->get_all_binary_xors();
     vector<uint32_t> dummy_v;
     for(const auto& bx: bin_xors) {
         dummy_v.clear();
-        dummy_v.push_back(bx.first.var());
-        dummy_v.push_back(bx.second.var());
-        solver.add_xor_clause(dummy_v, bx.first.sign()^bx.second.sign());
+        if (seen[bx.first.var()] == 0 && seen[bx.second.var()] == 0) { // see note above
+            dummy_v.push_back(mymap[bx.first.var()]);
+            dummy_v.push_back(mymap[bx.second.var()]);
+            solver.add_xor_clause(dummy_v, bx.first.sign()^bx.second.sign());
+        }
     }
+
+    vector<Lit> dont_elim;
+    set<Lit> dont_elim_set;
+    for(const auto& v: sampl_set) {
+        if (seen[v]) continue;
+        dont_elim_set.insert(Lit(mymap[v], false));
+    }
+    for(const auto& l: dont_elim_set) dont_elim.push_back(l);
+
+    return dont_elim;
 }
 
-DLL_PUBLIC SimplifiedCNF Arjun::get_fully_simplified_renumbered_cnf(
-    const vector<uint32_t>& sampl_vars, //contains empty_vars!
-    const bool sparsify,
-    const bool renumber,
-    const bool need_sol_extend)
+DLL_PUBLIC std::tuple<pair<vector<vector<Lit>>, uint32_t>, vector<uint32_t>, uint32_t>
+Arjun::get_fully_simplified_renumbered_cnf(
+    const vector<uint32_t>& sampl_set,
+    const vector<uint32_t>& empty_vars,
+    const uint32_t orig_num_vars)
 {
     CMSat::SATSolver solver;
-    solver.set_verbosity(arjdata->common.conf.verb);
-    solver.set_renumber(renumber);
-    solver.set_scc(renumber);
-
-    // Create a new SAT solver that contains no empties.
-    // dont_elim now how no empties in it
-    fill_solver(solver, this);
-    vector<Lit> dont_elim;
-    for(uint32_t v: sampl_vars) dont_elim.push_back(Lit(v, false));
+    solver.set_verbosity(2);
+    auto dont_elim = fill_solver_no_empty(sampl_set, empty_vars, orig_num_vars, solver, this);
 
     //Below works VERY WELL for: ProcessBean, pollard, track1_116.mcc2020_cnf
     //   and blasted_TR_b14_even3_linear.cnf.gz.no_w.cnf
@@ -575,69 +610,88 @@ DLL_PUBLIC SimplifiedCNF Arjun::get_fully_simplified_renumbered_cnf(
     solver.set_timeout_all_calls(100);
     solver.set_weaken_time_limitM(2000);
     solver.set_occ_based_lit_rem_time_limitM(500);
-    solver.set_bve(arjdata->common.conf.bve_during_elimtofile);
+
 
     // occ-ternary-res not used
     // eqlit-find ? (too slow)
-    string str("full-probe, sub-cls-with-bin, must-scc-vrepl, must-scc-vrepl, distill-cls-onlyrem, sub-impl, occ-resolv-subs, occ-del-elimed, occ-backw-sub, occ-rem-with-orgates, occ-bve, occ-ternary-res, ");
+    string str("full-probe, sub-cls-with-bin, must-scc-vrepl, must-scc-vrepl, distill-cls-onlyrem, sub-impl, occ-resolv-subs, occ-del-blocked, occ-backw-sub, occ-rem-with-orgates, occ-bve, occ-ternary-res, ");
     solver.simplify(&dont_elim, &str);
-
-    string str2;
-    if (arjdata->common.conf.bce) str2 += "occ-bce,";
-    str = str2 + string("intree-probe, occ-backw-sub-str, sub-str-cls-with-bin, clean-cls, distill-cls,distill-bins, ") + str;
+    str = string(",intree-probe, occ-backw-sub-str, sub-str-cls-with-bin, clean-cls, distill-cls,distill-bins, ") + str;
 
     solver.simplify(&dont_elim, &str);
-    if (arjdata->common.conf.backbone_simpl)
-        solver.backbone_simpl(
-            arjdata->common.conf.backbone_simpl_max_confl,
-            arjdata->common.conf.backbone_simpl_cmsgen);
-        /* backbone_simpl( */
-        /*     arjdata->common.conf.verb, */
-        /*     arjdata->common.conf.backbone_simpl_max_confl, */
-        /*     arjdata->common.conf.backbone_simpl_cmsgen, &solver); */
     solver.simplify(&dont_elim, &str);
     solver.simplify(&dont_elim, &str);
-    if (sparsify) {
-        str2.clear();
-        if (arjdata->common.conf.bce) str2+= "occ-bce,";
-        str2 += string("sparsify,") + str;
-        solver.simplify(&dont_elim, &str2);
-    }
-    //one more without sparsify
+    str = string("sparsify,") + str;
     solver.simplify(&dont_elim, &str);
 
-    str.clear();
+    str = string("");
     if (arjdata->common.definitely_satisfiable) {
         str += string("occ-rem-unconn-assumps, ");
     }
-    str += string(", must-scc-vrepl, must-renumber,");
-    if (arjdata->common.conf.bce) str += "occ-bce,";
+    str += string(", must-scc-vrepl, must-renumber");
     solver.simplify(&dont_elim, &str);
 
-    vector<uint32_t> new_sampl_vars (sampl_vars);
-    vector<uint32_t> empty_occs;
-    SimplifiedCNF cnf;
-    if (arjdata->common.conf.empty_occs_based) {
-        solver.clean_sampl_and_get_empties(new_sampl_vars, empty_occs);
-        dont_elim.clear();
-        for(uint32_t v: new_sampl_vars) dont_elim.push_back(Lit(v, false));
-        str = "occ-bve-empty, must-renumber";
-        solver.simplify(&dont_elim, &str);
-    }
-    get_simplified_cnf(&solver, new_sampl_vars, renumber, cnf.cnf, cnf.nvars);
-
-    std::sort(new_sampl_vars.begin(), new_sampl_vars.end());
-    cnf.sampling_vars = new_sampl_vars;
-    cnf.empty_occs = empty_occs.size();
-    if (need_sol_extend) {
-#ifdef ARJUN_SERIALIZE
-        cnf.sol_ext_data = solver.serialize_solution_reconstruction_data();
-#else
-        cout << "ERROR: Both Arjun and CMS needs to be compiled with 'ARJUN_SERIALIZE' to extend solutions" << endl;
-        exit(-1);
-#endif
-    }
-
-    return cnf;
+    vector<uint32_t> new_sampl_set;
+    for(const auto& l: dont_elim) new_sampl_set.push_back(l.var());
+    auto cnf = get_simplified_renumbered_cnf(&solver, new_sampl_set);
+    return std::make_tuple(cnf, new_sampl_set, empty_vars.size());
 }
 
+// DLL_PUBLIC void Arjun::set_polar_mode(CMSat::PolarityMode mode)
+// {
+//     arjdata->common.solver->set_polarity_mode(mode);
+// }
+
+
+DLL_PUBLIC void Arjun::set_pred_forever_cutoff(int pred_forever_cutoff)
+{
+    arjdata->common.solver->set_pred_forever_cutoff(pred_forever_cutoff);
+}
+
+DLL_PUBLIC void Arjun::set_every_pred_reduce(int every_pred_reduce)
+{
+    arjdata->common.solver->set_every_pred_reduce(every_pred_reduce);
+}
+
+DLL_PUBLIC void Arjun::set_empty_occs_based(const bool empty_occs_based)
+{
+    arjdata->common.conf.empty_occs_based = empty_occs_based;
+}
+
+DLL_PUBLIC void Arjun::set_mirror_empty(const bool mirror_empty)
+{
+    arjdata->common.conf.mirror_empty = mirror_empty;
+}
+
+DLL_PUBLIC void Arjun::set_variable_groups(
+  const std::vector<uint32_t>& _var2var_group,
+  const std::vector<std::vector<uint32_t>>& _var_groups)
+{   
+    arjdata->common.var2var_group = _var2var_group;
+    cout << "c [arjun-gis] set var2var_group, insize = " << _var2var_group.size()
+         << ", outsize = " << arjdata->common.var2var_group.size() << endl;
+    arjdata->common.var_groups = _var_groups;
+}
+
+DLL_PUBLIC void Arjun::set_group_independent_support(uint32_t group_indep)
+{
+    arjdata->common.conf.group_indep = group_indep;
+}
+
+DLL_PUBLIC void Arjun::print_var_groups()
+{
+    cout << "c [arjun-gis] GROUPS:" << endl;
+    cout << "c [arjun-gis] -------" << endl;
+    for (auto group = begin(arjdata->common.var_groups) + 1; group != end(arjdata->common.var_groups); group++) {
+      cout << "c [arjun-gis] Group size: " << group->size();
+      cout << ", group vars: ";
+      for (auto var = begin(*group); var != end(*group); var++) {
+        cout << *var + 1 << " ";
+      }
+      cout << endl;
+    }
+    cout << "c [arjun-gis] var2var_group.size() = " << arjdata->common.var2var_group.size() << endl;
+    for (uint i = 0; i < get_orig_num_vars(); i++) {
+        cout << "c [arjun-gis] Variable " << i << " belongs to group " << arjdata->common.var2var_group[i] << endl;
+    }
+}

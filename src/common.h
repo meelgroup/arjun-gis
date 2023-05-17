@@ -1,7 +1,9 @@
 /*
  Arjun
 
- Copyright (c) 2019, Mate Soos and Kuldeep S. Meel. All rights reserved.
+ Copyright (c) 2019, Mate Soos and Kuldeep S. Meel. 
+               2022, Anna L.D. Latour.
+ All rights reserved.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -39,24 +41,20 @@
 #include <vector>
 #include <sstream>
 #include <string>
-#ifdef CMS_LOCAL_BUILD
-#include "cryptominisat.h"
-#else
 #include <cryptominisat5/cryptominisat.h>
-#endif
+#include "cryptominisat5/dimacsparser.h"
 
 #include "time_mem.h"
 #include "config.h"
 
 using namespace CMSat;
 using std::cout;
+using std::cerr;
 using std::endl;
 using std::map;
 using std::set;
 using std::string;
 using std::vector;
-
-namespace ArjunInt {
 
 struct Common
 {
@@ -78,6 +76,14 @@ struct Common
     vector<uint32_t>* sampling_set = NULL;
     vector<uint32_t> empty_occs;
 
+    /** Maps variable to the index of the variable group it belongs to.
+     * If the variable does not belong to any group, it maps to 0. */ 
+    vector<uint32_t> var2var_group;
+    /** Vector of vectors, where each vector corresponds to the
+     * variables that are in the group corresponding to the index of the vector.
+     * The zeroth group is empty. */
+    vector<vector<uint32_t>> var_groups;
+
     vector<Lit> tmp;
     vector<char> seen;
     uint32_t orig_num_vars = std::numeric_limits<uint32_t>::max();
@@ -87,7 +93,7 @@ struct Common
     bool definitely_satisfiable = false;
     enum ModeType {one_mode, many_mode};
 
-    //assert indic[var] to FASLE to force var==var+orig_num_vars
+    //assert indic[var] to FALSE to force var==var+orig_num_vars
     vector<uint32_t> var_to_indic; //maps an ORIG VAR to an INDICATOR VAR
     vector<uint32_t> indic_to_var; //maps an INDICATOR VAR to ORIG VAR
 
@@ -104,17 +110,12 @@ struct Common
     //maps var->commpart. If it doesn't belong anywhere, it's -1
     vector<int> commpart;
 
-    //maps variable -> number of communities it's connected to via clauses
-    vector<set<int>> var_to_num_communities;
-
     //total incidence in a commpart. Maps commpart->maxinc
     vector<uint32_t> commpart_incs;
 
+    vector<double> vsids_scores;
     vector<Lit> dont_elim;
     vector<Lit> tmp_implied_by;
-
-    // cnf as we parsed it in (no simplification whatsoever)
-    vector<Lit> orig_cnf;
 
     void update_sampling_set(
         const vector<uint32_t>& unknown,
@@ -127,10 +128,32 @@ struct Common
     void start_with_clean_sampling_set();
     void duplicate_problem();
     void get_incidence();
-    void calc_community_parts();
     void set_up_solver();
     vector<Lit> get_cnf();
+
+
+    //guess
     std::mt19937 random_source = std::mt19937(0);
+    uint32_t guess_div = 10;
+    void run_guess();
+    void fill_assumptions_guess(
+        vector<Lit>& assumptions,
+        const vector<uint32_t>& indep,
+        const vector<uint32_t>& unknown,
+        const vector<char>& unknown_set,
+        uint32_t group,
+        uint32_t offs,
+        uint32_t index,
+        vector<char>& dontremove_vars);
+    void guess_round(
+        uint32_t group,
+        bool reverse = false,
+        bool shuffle = false,
+        uint32_t offset = 0);
+    uint32_t guess_remove_and_update_ass(
+        vector<Lit>& assumptions,
+        vector<char>& unknown_set,
+        vector<char>& dontremove_vars);
 
     //simp
     vector<uint32_t> toClear;
@@ -141,11 +164,34 @@ struct Common
     void remove_eq_literals(bool print = true);
     void find_equiv_subformula();
     bool probe_all();
+    bool backbone_simpl();
     void empty_out_indep_set_if_unsat();
     bool simplify_bve_only();
     bool run_gauss_jordan();
     void check_no_duplicate_in_sampling_set();
     void order_sampl_set_for_simp();
+    bool in_variable_group(uint32_t var);
+    uint32_t get_group_idx(uint32_t var);
+
+    //forward
+    void set_guess_forward_round(
+        const vector<uint32_t>& indep,
+        vector<uint32_t>& unknown,
+        vector<char>& unknown_set,
+        uint32_t group,
+        uint32_t offs,
+        vector<char>& guess_set);
+    void fill_assumptions_forward(
+        vector<Lit>& assumptions,
+        const vector<uint32_t>& indep,
+        vector<uint32_t>& unknown,
+        uint32_t group,
+        uint32_t offs,
+        vector<char>& guess_set);
+    bool forward_round(
+        uint32_t max_iters = std::numeric_limits<uint32_t>::max(),
+        uint32_t group = 1,
+        int offset = 0);
 
     //backward
     void fill_assumptions_backward(
@@ -263,6 +309,7 @@ struct IncidenceSorterCommPart
         if (part_a_inc != part_b_inc) {
             return part_a_inc < part_b_inc;
         }
+        return false;
 
         auto a_inc = comm->incidence[a];
         auto b_inc = comm->incidence[b];
@@ -275,56 +322,23 @@ struct IncidenceSorterCommPart
     const Common* comm;
 };
 
-struct IncidenceSorterCommPartToOtherComm
-{
-    IncidenceSorterCommPartToOtherComm(const Common* _comm) :
-        comm(_comm)
-    {}
 
-    bool operator()(const uint32_t a, const uint32_t b) {
-        assert(a < comm->orig_num_vars);
-        assert(b < comm->orig_num_vars);
-
-        auto part_a = comm->var_to_num_communities.at(a).size();
-        auto part_b = comm->var_to_num_communities.at(b).size();
-
-        if (part_a != part_b) {
-            return part_a < part_b; //"a" is connected to LESS communities -> return TRUE
-        }
-
-        auto a_inc = comm->incidence_probing[a];
-        auto b_inc = comm->incidence_probing[b];
-        if (a_inc != b_inc) {
-            return a_inc > b_inc; //"a" has LARGER incidence -> return TRUE
-        }
-
-        return a < b;
-    }
-
-    const Common* comm;
-};
 
 template<class T>
 void Common::sort_unknown(T& unknown)
 {
-    if (conf.unknown_sort == 1) {
+    if (conf.incidence_sort == 1 || conf.incidence_sort >= 10) {
         std::sort(unknown.begin(), unknown.end(), IncidenceSorter<uint32_t>(incidence));
-    } else if (conf.unknown_sort == 2) {
+    } else if (conf.incidence_sort == 2) {
         std::sort(unknown.begin(), unknown.end(), IncidenceSorter2<uint32_t>(incidence, incidence_probing));
-    } else if (conf.unknown_sort == 3) {
+    } else if (conf.incidence_sort == 3) {
         std::sort(unknown.begin(), unknown.end(), IncidenceSorter<uint32_t>(incidence_probing));
-    } else if (conf.unknown_sort == 4) {
-        std::sort(unknown.begin(), unknown.end(), IncidenceSorterCommPart(this));
-    } else if (conf.unknown_sort == 5) {
-        std::sort(unknown.begin(), unknown.end(), IncidenceSorterCommPartToOtherComm(this));
-    } else if (conf.unknown_sort == 6) {
+    } else if (conf.incidence_sort == 6) {
         std::shuffle(unknown.begin(), unknown.end(), random_source);
     } else {
         cout << "ERROR: wrong sorting mechanism given" << endl;
         exit(-1);
     }
-}
-
 }
 
 //ARJUN_COMMON_H
