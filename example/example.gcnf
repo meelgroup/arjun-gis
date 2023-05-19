@@ -1,0 +1,73 @@
+c 
+c NETWORK DATA
+c ------------
+c Network file:     undir-network_n5_e6.txt
+c Number of nodes (after preprocess): 5
+c Number of edges (after preprocess): 6
+c 
+c 
+c PROBLEM PARAMETERS
+c ------------------
+c k:                 1
+c Encoding:          independent support
+c 
+c 
+c REPRODUCIBILITY INFO
+c --------------------
+c Generated with:    identifying_codes.py
+c Machine:           puck
+c OS:                Linux, 5.19.0-41-generic, #42~22.04.1-Ubuntu SMP PREEMPT_DYNAMIC Tue Apr 18 17:40:00 UTC 2
+c Repository:        git@github.com:latower/independent-codes-project.git
+c Branch:            main
+c Commit:            50c954632b180209807b8639bcd29d21f19f9295
+c Date (YYYY-MM-DD): 2023-05-19
+c 
+c VARIABLE MAP
+c ------------
+c 
+c   variable  original name
+c -------------------------
+c          1              1
+c          2              2
+c          3              3
+c          4              4
+c          5              5
+c 
+p cnf 11 31
+c ind 1 2 3 4 5 6 7 8 9 10 0
+c grp 1 6 0
+c grp 2 7 0
+c grp 3 8 0
+c grp 4 9 0
+c grp 5 10 0
+-5 -4 0
+-5 -11 0
+-4 -11 0
+-3 -2 0
+-3 -1 0
+-3 11 0
+-2 -1 0
+-2 11 0
+-1 11 0
+-6 1 2 4 0
+6 -1 0
+6 -2 0
+6 -4 0
+-7 1 2 3 5 0
+7 -1 0
+7 -2 0
+7 -3 0
+7 -5 0
+-9 1 4 5 0
+9 -1 0
+9 -4 0
+9 -5 0
+-8 2 3 5 0
+8 -2 0
+8 -3 0
+8 -5 0
+-10 2 4 3 5 0
+10 -2 0
+10 -4 0
+10 -3 0
+10 -5 0
