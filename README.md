@@ -1,10 +1,8 @@
-# Arjun-GIS
+# gismo
 
-A minimal group independent support (GIS) calculator. Using the original idea of MIS and B+E, with quick fused queries, using inverted and mass queries for fast heuristic search. This tool builds on [Arjun](https://github.com/meelgroup/arjun), and is written for the paper
+A minimal group independent support (GIS) calculator. This tool builds on [Arjun](https://github.com/meelgroup/arjun), and is written for the paper
 
 > *Solving the Identifying Code Set Problem with Grouped Independent Support*, Anna L.D. Latour, Arunabha Sen, Kuldeep S. Meel, IJCAI 2023.
-
-Note that the simplification part of Arjun contains code from SharpSAT-td by Tuukka Korhonen and Matti Jarvisalo, see [this PDF](https://raw.githubusercontent.com/Laakeri/sharpsat-td/main/description.pdf) and [this code](https://github.com/Laakeri/sharpsat-td) for details. Note that treewidth-decomposition is _not_ part of Arjun.
 
 ## How to Build
 To build on Linux, you will need the following:
@@ -35,4 +33,32 @@ sudo ldconfig
 
 ## How to Use
 
-(TODO)
+### Input format
+
+The input for gismo is a CNF in DIMACS format, in which the variables of interest are indicated, and the way in which they are grouped. Considering the example in `example/example.gcnf`, the first part of the grouped DIMACS encoding looks like this:
+
+```
+p cnf 11 31
+c ind 1 2 3 4 5 6 7 8 9 10 0
+c grp 1 6 0
+c grp 2 7 0
+c grp 3 8 0
+c grp 4 9 0
+c grp 5 10 0
+-5 -4 0
+-5 -11 0
+...
+```
+Here, we see that we have 11 variables, the first 10 of which are the variables of interest (and variable `11` is an auxiliary variable from the encoding of the cardinality constraint). The variables of interest are partitioned as follows: `groups := { {1,6}, {2,7}, {3,8}, {4,9}, {5,10} }`.
+
+### Running gismo
+
+```bash
+user@machine: gismo/build$ ./gismo ../example/example.gcnf
+```
+The output should contain a line that reads `c ind 3 8 1 6 0`, indicating that variables `3`, `8`, `1`, and `6` are in the support of the grouped independent support. 
+
+
+## Contributors
+- Anna L.D. Latour ([github.com/latower](https://github.com/latower))
+- Mate Soos ([github.com/msoos](https://github.com/msoos))
