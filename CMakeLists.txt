@@ -87,7 +87,7 @@ foreach (build_config ${build_types})
     endforeach()
 endforeach()
 
-PROJECT(arjun-gis)
+PROJECT(gismo)
 
 # contains some library search cmake scripts
 SET(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
@@ -298,7 +298,7 @@ if ((${CMAKE_SYSTEM_NAME} MATCHES "Linux") OR (${CMAKE_SYSTEM_NAME} MATCHES "Dar
 endif()
 
 if(NOT MSVC)
-  set(DEF_INSTALL_CMAKE_DIR lib/cmake/arjun-gis)
+  set(DEF_INSTALL_CMAKE_DIR lib/cmake/gismo)
 endif()
 
 # -----------------------------------------------------------------------------
@@ -344,19 +344,19 @@ endif()
 # if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND NOT EMSCRIPTEN)
 #     find_program(HELP2MAN_FOUND help2man)
 #     if (HELP2MAN_FOUND)
-#         ADD_CUSTOM_TARGET(man_arjun-gis
+#         ADD_CUSTOM_TARGET(man_gismo
 #             ALL
-#             DEPENDS arjun-gis-bin
+#             DEPENDS gismo-bin
 #         )
 #
 #         ADD_CUSTOM_COMMAND(
-#             TARGET man_arjun-gis
+#             TARGET man_gismo
 #             COMMAND help2man
-#             ARGS --version-string=${ARJUN_GIS_FULL_VERSION} --help-option="-h" $<TARGET_FILE:arjun-gis-bin> -o ${CMAKE_CURRENT_BINARY_DIR}/arjun-gis.1
+#             ARGS --version-string=${ARJUN_GIS_FULL_VERSION} --help-option="-h" $<TARGET_FILE:gismo-bin> -o ${CMAKE_CURRENT_BINARY_DIR}/gismo.1
 #         )
 #
 #         INSTALL(
-#             FILES ${CMAKE_CURRENT_BINARY_DIR}/arjun-gis.1
+#             FILES ${CMAKE_CURRENT_BINARY_DIR}/gismo.1
 #             DESTINATION ${CMAKE_INSTALL_PREFIX}/man/man1)
 #
 #         message(STATUS "Manpage will be created and installed")
@@ -397,7 +397,7 @@ message(STATUS "All defines at startup: ${COMPILE_DEFINES}")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib)
 
-macro(arjun_gis_add_public_header LIBTARGET HEADER)
+macro(gismo_add_public_header LIBTARGET HEADER)
     get_target_property(EXISTING_PUBLIC_HEADERS ${LIBTARGET} PUBLIC_HEADER)
     if(EXISTING_PUBLIC_HEADERS)
         list(APPEND EXISTING_PUBLIC_HEADERS "${HEADER}")
@@ -435,7 +435,7 @@ endif()
 # -----------------------------------------------------------------------------
 # Provide an export name to be used by targets that wish to export themselves.
 # -----------------------------------------------------------------------------
-set(ARJUN_GIS_EXPORT_NAME "arjungisTargets")
+set(ARJUN_GIS_EXPORT_NAME "gismoTargets")
 
 add_subdirectory(src rjun-src)
 
@@ -468,37 +468,37 @@ endif()
 
 # -----------------------------------------------------------------------------
 # Export our targets so that other CMake based projecfind_package(louvain_communities CONFIG)
-# the build of arjun-gis in the build-tree
+# the build of gismo in the build-tree
 # -----------------------------------------------------------------------------
-set(ARJUN_GIS_TARGETS_FILENAME "arjungisTargets.cmake")
-set(ARJUN_GIS_CONFIG_FILENAME "arjungisConfig.cmake")
+set(ARJUN_GIS_TARGETS_FILENAME "gismoTargets.cmake")
+set(ARJUN_GIS_CONFIG_FILENAME "gismoConfig.cmake")
 
 # Export targets
-set(MY_TARGETS arjun-gis)
+set(MY_TARGETS gismo)
 export(
     TARGETS ${MY_TARGETS}
     FILE "${CMAKE_CURRENT_BINARY_DIR}/${ARJUN_GIS_TARGETS_FILENAME}"
 )
 
-# Create arjungisConfig file
+# Create gismoConfig file
 set(EXPORT_TYPE "Build-tree")
 set(CONF_INCLUDE_DIRS "${CMAKE_CURRENT_BINARY_DIR}/include")
-configure_file(arjungisConfig.cmake.in
+configure_file(gismoConfig.cmake.in
     "${CMAKE_CURRENT_BINARY_DIR}/${ARJUN_GIS_CONFIG_FILENAME}" @ONLY
 )
 
 # Export this package to the CMake user package registry
 # Now the user can just use find_package(cryptominisat5) on their system
-export(PACKAGE arjun-gis)
+export(PACKAGE gismo)
 
-set(DEF_INSTALL_CMAKE_DIR lib/cmake/arjun-gis)
+set(DEF_INSTALL_CMAKE_DIR lib/cmake/gismo)
 set(ARJUN_GIS_INSTALL_CMAKE_DIR ${DEF_INSTALL_CMAKE_DIR} CACHE PATH
-    "Installation directory for arjun-gis CMake files")
+    "Installation directory for gismo CMake files")
 
-# Create arjungisConfig file
+# Create gismoConfig file
 set(EXPORT_TYPE "installed")
 set(CONF_INCLUDE_DIRS "${CMAKE_INSTALL_PREFIX}/include")
-configure_file(arjungisConfig.cmake.in
+configure_file(gismoConfig.cmake.in
    "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_FILES_DIRECTORY}/${ARJUN_GIS_CONFIG_FILENAME}" @ONLY
 )
 

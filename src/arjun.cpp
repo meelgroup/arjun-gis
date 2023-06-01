@@ -668,7 +668,7 @@ DLL_PUBLIC void Arjun::set_variable_groups(
   const std::vector<std::vector<uint32_t>>& _var_groups)
 {   
     arjdata->common.var2var_group = _var2var_group;
-    cout << "c [arjun-gis] set var2var_group, insize = " << _var2var_group.size()
+    cout << "c [gismo] set var2var_group, insize = " << _var2var_group.size()
          << ", outsize = " << arjdata->common.var2var_group.size() << endl;
     arjdata->common.var_groups = _var_groups;
 }
@@ -680,18 +680,18 @@ DLL_PUBLIC void Arjun::set_group_independent_support(uint32_t group_indep)
 
 DLL_PUBLIC void Arjun::print_var_groups()
 {
-    cout << "c [arjun-gis] GROUPS:" << endl;
-    cout << "c [arjun-gis] -------" << endl;
+    cout << "c [gismo] GROUPS:" << endl;
+    cout << "c [gismo] -------" << endl;
     for (auto group = begin(arjdata->common.var_groups) + 1; group != end(arjdata->common.var_groups); group++) {
-      cout << "c [arjun-gis] Group size: " << group->size();
+      cout << "c [gismo] Group size: " << group->size();
       cout << ", group vars: ";
       for (auto var = begin(*group); var != end(*group); var++) {
         cout << *var + 1 << " ";
       }
       cout << endl;
     }
-    cout << "c [arjun-gis] var2var_group.size() = " << arjdata->common.var2var_group.size() << endl;
+    cout << "c [gismo] var2var_group.size() = " << arjdata->common.var2var_group.size() << endl;
     for (uint i = 0; i < get_orig_num_vars(); i++) {
-        cout << "c [arjun-gis] Variable " << i << " belongs to group " << arjdata->common.var2var_group[i] << endl;
+        cout << "c [gismo] Variable " << i << " belongs to group " << arjdata->common.var2var_group[i] << endl;
     }
 }

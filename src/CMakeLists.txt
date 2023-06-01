@@ -43,7 +43,7 @@ endif()
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/GitSHA1.cpp.in" "${CMAKE_CURRENT_BINARY_DIR}/GitSHA1.cpp" @ONLY)
 
-add_library(arjun-gis
+add_library(gismo
     forward.cpp
     backward.cpp
     guess.cpp
@@ -53,48 +53,48 @@ add_library(arjun-gis
     ${CMAKE_CURRENT_BINARY_DIR}/GitSHA1.cpp
 )
 
-    add_executable(arjun-gis-bin
+    add_executable(gismo-bin
     main.cpp
 )
 
-set(arjun-gis_bin_exec_link_libs
+set(gismo_bin_exec_link_libs
     ${Boost_LIBRARIES}
 )
 
 IF (ZLIB_FOUND)
-    SET(arjun-gis_bin_exec_link_libs ${arjun-gis_bin_exec_link_libs} ${ZLIB_LIBRARY})
+    SET(gismo_bin_exec_link_libs ${gismo_bin_exec_link_libs} ${ZLIB_LIBRARY})
 ENDIF()
 
-set_target_properties(arjun-gis PROPERTIES
-    PUBLIC_HEADER "${arjun-gis_public_headers}"
+set_target_properties(gismo PROPERTIES
+    PUBLIC_HEADER "${gismo_public_headers}"
     VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
     SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
 )
 
-set_target_properties(arjun-gis-bin PROPERTIES
-    OUTPUT_NAME arjun-gis
+set_target_properties(gismo-bin PROPERTIES
+    OUTPUT_NAME gismo
     RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}
     INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 
-target_link_libraries(arjun-gis-bin
-    ${arjun-gis_bin_exec_link_libs}
-    arjun-gis
+target_link_libraries(gismo-bin
+    ${gismo_bin_exec_link_libs}
+    gismo
     ${CRYPTOMINISAT5_LIBRARIES}
 )
 
-arjun_gis_add_public_header(
-    arjun-gis ${CMAKE_CURRENT_SOURCE_DIR}/arjun.h )
+gismo_add_public_header(
+    gismo ${CMAKE_CURRENT_SOURCE_DIR}/arjun.h )
 
 # -----------------------------------------------------------------------------
 # Copy public headers into build directory include directory.
-# The arjun-gisConfig.cmake we generate in the build directory depends on
+# The gismoConfig.cmake we generate in the build directory depends on
 # this.
 # -----------------------------------------------------------------------------
-set(HEADER_DEST "${PROJECT_BINARY_DIR}/include/arjun-gis")
+set(HEADER_DEST "${PROJECT_BINARY_DIR}/include/gismo")
 add_custom_target(CopyPublicHeaders ALL)
-get_target_property(arjun-gis_public_headers arjun-gis PUBLIC_HEADER)
-foreach(public_header ${arjun-gis_public_headers})
+get_target_property(gismo_public_headers gismo PUBLIC_HEADER)
+foreach(public_header ${gismo_public_headers})
     get_filename_component(HEADER_NAME ${public_header} NAME)
     add_custom_command(TARGET CopyPublicHeaders PRE_BUILD
                        COMMAND ${CMAKE_COMMAND} -E make_directory
@@ -109,15 +109,15 @@ foreach(public_header ${arjun-gis_public_headers})
 endforeach()
 
 
-install(TARGETS arjun-gis
+install(TARGETS gismo
     EXPORT ${ARJUN_GIS_EXPORT_NAME}
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-    PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/arjun-gis"
+    PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/gismo"
 )
 
-install(TARGETS arjun-gis-bin
+install(TARGETS gismo-bin
     EXPORT ${ARJUN_GIS_EXPORT_NAME}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
