@@ -1,8 +1,8 @@
 # gismo
 
-A minimal group independent support (GIS) calculator. This tool builds on [Arjun](https://github.com/meelgroup/arjun), and is written for the paper
+A minimal group independent support (GIS) calculator. This tool builds on [Arjun](https://github.com/meelgroup/arjun), and is developed for the paper
 
-> *Solving the Identifying Code Set Problem with Grouped Independent Support*, Anna L.D. Latour, Arunabha Sen, Kuldeep S. Meel, IJCAI 2023.
+> *Solving the Identifying Code Set Problem with Grouped Independent Support*, Anna L.D. Latour, Arunabha Sen, Kuldeep S. Meel, IJCAI 2023, paper #4051.
 
 ## How to Build
 To build on Linux, you will need the following:
@@ -11,7 +11,7 @@ sudo apt-get install build-essential cmake
 sudo apt-get install zlib1g-dev libboost-program-options-dev libboost-serialization-dev
 ```
 
-Then, build CryptoMiniSat, Louvain-Community, and Arjun:
+Then, build CryptoMiniSat and gismo:
 ```
 git clone https://github.com/msoos/cryptominisat
 cd cryptominisat
@@ -22,13 +22,22 @@ sudo make install
 sudo ldconfig
 
 cd ../..
-git clone https://github.com/meelgroup/arjun
-cd arjun
+git clone https://github.com/meelgroup/gismo
+cd gismo
 mkdir build && cd build
 cmake ..
 make
 sudo make install
 sudo ldconfig
+```
+
+Developers, please pick your favourite build script (e.g, `build_static.sh`) and build as follows:
+```
+git clone https://github.com/meelgroup/gismo
+cd gismo
+mkdir build && cd build
+ln -a ../scripts/* .
+./build_static.sh
 ```
 
 ## How to Use
