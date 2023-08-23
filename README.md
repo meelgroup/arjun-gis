@@ -2,7 +2,11 @@
 
 A minimal group independent support (GIS) calculator. This tool builds on [Arjun](https://github.com/meelgroup/arjun), and is developed for the paper
 
-> *Solving the Identifying Code Set Problem with Grouped Independent Support*, Anna L.D. Latour, Arunabha Sen, Kuldeep S. Meel, IJCAI 2023, paper #4051.
+> *Solving the Identifying Code Set Problem with Grouped Independent Support*, Anna L.D. Latour, Arunabha Sen, Kuldeep S. Meel, IJCAI 2023, paper #4051. [[paper pdf](https://www.ijcai.org/proceedings/2023/0219.pdf), [extended version](https://raw.githubusercontent.com/latower/latower.github.io/master/files/misc/LatEtAl23-extended_2023-08-23.pdf)]
+
+## Related Resources
+
+Please find a repository with our experimentation scripts, benchmarks, and results at [github.com/latower/identifying-codes](https://github.com/latower/identifying-codes/).
 
 ## How to Build
 To build on Linux, you will need the following:
