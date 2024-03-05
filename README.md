@@ -11,37 +11,37 @@ Please find a repository with our experimentation scripts, benchmarks, and resul
 ## How to Build
 To build on Linux, you will need the following:
 ```
-sudo apt-get install build-essential cmake
-sudo apt-get install zlib1g-dev libboost-program-options-dev libboost-serialization-dev
+$ sudo apt-get install build-essential cmake
+$ sudo apt-get install zlib1g-dev libboost-program-options-dev libboost-serialization-dev
 ```
 
 Then, build CryptoMiniSat and gismo:
 ```
-git clone https://github.com/msoos/cryptominisat
-cd cryptominisat
-mkdir build && cd build
-cmake ..
-make
-sudo make install
-sudo ldconfig
+$ git clone https://github.com/msoos/cryptominisat
+$ cd cryptominisat
+$ mkdir build && cd build
+$ cmake ..
+$ make
+$ sudo make install
+$ sudo ldconfig
 
-cd ../..
-git clone https://github.com/meelgroup/gismo
-cd gismo
-mkdir build && cd build
-cmake ..
-make
-sudo make install
-sudo ldconfig
+$ cd ../..
+$ git clone https://github.com/meelgroup/gismo
+$ cd gismo
+$ mkdir build && cd build
+$ cmake ..
+$ make
+$ sudo make install
+$ sudo ldconfig
 ```
 
 Developers, please pick your favourite build script (e.g, `build_static.sh`) and build as follows:
 ```
-git clone https://github.com/meelgroup/gismo
-cd gismo
-mkdir build && cd build
-ln -a ../scripts/* .
-./build_static.sh
+$ git clone https://github.com/meelgroup/gismo
+$ cd gismo
+$ mkdir build && cd build
+$ ln -s ../scripts/* .
+$ ./build_static.sh
 ```
 
 ## How to Use
