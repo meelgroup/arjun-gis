@@ -1,0 +1,22 @@
+# Config file for the @EXPORT_TYPE@ gismo Package
+# It defines the following variables
+#  GISMO_INCLUDE_DIRS - include directories for gismo
+#  GISMO_LIBRARIES    - libraries to link against
+#  GISMO_EXECUTABLE   - the gismo executable
+
+# Compute paths
+get_filename_component(GISMO_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+set(GISMO_INCLUDE_DIRS "@CONF_INCLUDE_DIRS@")
+
+# Our library dependencies (contains definitions for IMPORTED targets)
+include("${GISMO_CMAKE_DIR}/@GISMO_TARGETS_FILENAME@")
+
+# These are IMPORTED targets created by @GISMO_TARGETS_FILENAME@
+set(GISMO_LIBRARIES gismo)
+set(GISMO_STATIC_LIBRARIES gismo)
+if (louvain_communities_FOUND)
+    set(GISMO_LIBRARIES_DEPS louvain_communities)
+endif()
+set(GISMO_VERSION_MAJOR @PROJECT_VERSION_MAJOR@)
+set(GISMO_VERSION_MINOR @PROJECT_VERSION_MINOR@)
+set(GISMO_EXECUTABLE gismo)

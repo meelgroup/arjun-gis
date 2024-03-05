@@ -47,7 +47,7 @@ endif()
 # -----------------------------------------------------------------------------
 # Provide scripts dir for included cmakes to use
 # -----------------------------------------------------------------------------
-set(ARJUN_GISS_SCRIPTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/scripts)
+set(GISMO_SCRIPTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/scripts)
 
 include (GenerateExportHeader)
 include (GNUInstallDirs)
@@ -106,13 +106,31 @@ if (STATICCOMPILE)
     set(Boost_USE_STATIC_LIBS ON)
 endif()
 
+macro(add_sanitize_option flagname)
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${flagname}" )
+endmacro()
+
 option(SANITIZE "Use Clang sanitizers. You MUST use clang++ as the compiler for this to work" OFF)
 if (SANITIZE)
-    # MESSAGE(WARNING " --Using clang sanitizers -- you MUST use clang++ or the compile WILL fail")
+    MESSAGE(WARNING " --Using clang sanitizers -- you MUST use clang++ or the compile WILL fail")
     SET( CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS}  -lasan -lubsan " )
     SET( CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -lasan -lubsan ")
-    add_sanitize_option("-fsanitize-trap=undefined,float-divide-by-zero,unsigned-integer-overflow,implicit-conversion,local-bounds,bounds,return,alignment,null,integer,enum,bool,float-cast-overflow,integer-divide-by-zero,signed-integer-overflow")
-    add_sanitize_option("-fsanitize=address")
+    add_compile_options("-fsanitize=address")
+    #    add_compile_options("-fsanitize=integer")
+    add_compile_options("-fsanitize=undefined")
+    add_compile_options("-fsanitize=null")
+    add_compile_options("-fsanitize=alignment")
+    #add_compile_options("-fno-sanitize-recover")
+    add_compile_options("-fsanitize=return")
+    add_compile_options("-fsanitize=bounds")
+    add_compile_options("-fsanitize=float-divide-by-zero")
+    add_compile_options("-fsanitize=integer-divide-by-zero")
+    #    add_compile_options("-fsanitize=unsigned-integer-overflow")
+    add_compile_options("-fsanitize=signed-integer-overflow")
+    add_compile_options("-fsanitize=bool")
+    add_compile_options("-fsanitize=enum")
+    add_compile_options("-fsanitize=float-cast-overflow")
+    add_compile_options("$<$<CONFIG:RELWITHDEBINFO>:-D_GLIBCXX_ASSERTIONS>")
 endif()
 
 include(CheckCXXCompilerFlag)
@@ -321,10 +339,10 @@ if (GIT_EXECUTABLE)
 else()
   set(GIT_SHA "GIT-hash-notfound")
 endif()
-set(ARJUN_GIS_FULL_VERSION "2.5.0")
+set(GISMO_FULL_VERSION "2.5.0")
 
-string(REPLACE "." ";" ARJUN_GIS_FULL_VERSION_LIST ${ARJUN_GIS_FULL_VERSION})
-SetVersionNumber("PROJECT" ${ARJUN_GIS_FULL_VERSION_LIST})
+string(REPLACE "." ";" GISMO_FULL_VERSION_LIST ${GISMO_FULL_VERSION})
+SetVersionNumber("PROJECT" ${GISMO_FULL_VERSION_LIST})
 MESSAGE(STATUS "PROJECT_VERSION: ${PROJECT_VERSION}")
 MESSAGE(STATUS "PROJECT_VERSION_MAJOR: ${PROJECT_VERSION_MAJOR}")
 MESSAGE(STATUS "PROJECT_VERSION_MINOR: ${PROJECT_VERSION_MINOR}")
@@ -336,6 +354,9 @@ if (NOT EMSCRIPTEN)
     set (boost_components "")
     set(boost_components ${boost_components} program_options)
     find_package( Boost 1.46 COMPONENTS ${boost_components})
+else()
+    set(BUILD_SHARED_LIBS ON)
+    set(NOZLIB ON)
 endif()
 
 # ----------
@@ -352,7 +373,7 @@ endif()
 #         ADD_CUSTOM_COMMAND(
 #             TARGET man_gismo
 #             COMMAND help2man
-#             ARGS --version-string=${ARJUN_GIS_FULL_VERSION} --help-option="-h" $<TARGET_FILE:gismo-bin> -o ${CMAKE_CURRENT_BINARY_DIR}/gismo.1
+#             ARGS --version-string=${GISMO_FULL_VERSION} --help-option="-h" $<TARGET_FILE:gismo-bin> -o ${CMAKE_CURRENT_BINARY_DIR}/gismo.1
 #         )
 #
 #         INSTALL(
@@ -435,9 +456,9 @@ endif()
 # -----------------------------------------------------------------------------
 # Provide an export name to be used by targets that wish to export themselves.
 # -----------------------------------------------------------------------------
-set(ARJUN_GIS_EXPORT_NAME "gismoTargets")
+set(GISMO_EXPORT_NAME "gismoTargets")
 
-add_subdirectory(src rjun-src)
+add_subdirectory(src gismo-src)
 
 # -----------------------------------------------------------------------------
 # Add uninstall target for makefiles
@@ -467,48 +488,49 @@ else()
 endif()
 
 # -----------------------------------------------------------------------------
-# Export our targets so that other CMake based projecfind_package(louvain_communities CONFIG)
+# Export our targets so that other CMake based projects can interface with
 # the build of gismo in the build-tree
 # -----------------------------------------------------------------------------
-set(ARJUN_GIS_TARGETS_FILENAME "gismoTargets.cmake")
-set(ARJUN_GIS_CONFIG_FILENAME "gismoConfig.cmake")
+set(GISMO_TARGETS_FILENAME "gismoTargets.cmake")
+set(GISMO_CONFIG_FILENAME "gismoConfig.cmake")
 
 # Export targets
 set(MY_TARGETS gismo)
 export(
     TARGETS ${MY_TARGETS}
-    FILE "${CMAKE_CURRENT_BINARY_DIR}/${ARJUN_GIS_TARGETS_FILENAME}"
+    FILE "${CMAKE_CURRENT_BINARY_DIR}/${GISMO_TARGETS_FILENAME}"
 )
-
+message(CMAKE_CURRENT_BINARY_DIR/GISMO_TARGETS_FILENAME"=${CMAKE_CURRENT_BINARY_DIR}/${GISMO_TARGETS_FILENAME}")
 # Create gismoConfig file
 set(EXPORT_TYPE "Build-tree")
 set(CONF_INCLUDE_DIRS "${CMAKE_CURRENT_BINARY_DIR}/include")
 configure_file(gismoConfig.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/${ARJUN_GIS_CONFIG_FILENAME}" @ONLY
+    "${CMAKE_CURRENT_BINARY_DIR}/${GISMO_CONFIG_FILENAME}" @ONLY
 )
 
 # Export this package to the CMake user package registry
-# Now the user can just use find_package(cryptominisat5) on their system
+# Now the user can just use find_package(gismo) on their system
 export(PACKAGE gismo)
 
 set(DEF_INSTALL_CMAKE_DIR lib/cmake/gismo)
-set(ARJUN_GIS_INSTALL_CMAKE_DIR ${DEF_INSTALL_CMAKE_DIR} CACHE PATH
+set(GISMO_INSTALL_CMAKE_DIR ${DEF_INSTALL_CMAKE_DIR} CACHE PATH
     "Installation directory for gismo CMake files")
 
 # Create gismoConfig file
 set(EXPORT_TYPE "installed")
 set(CONF_INCLUDE_DIRS "${CMAKE_INSTALL_PREFIX}/include")
 configure_file(gismoConfig.cmake.in
-   "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_FILES_DIRECTORY}/${ARJUN_GIS_CONFIG_FILENAME}" @ONLY
+   "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_FILES_DIRECTORY}/${GISMO_CONFIG_FILENAME}" @ONLY
 )
 
 install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_FILES_DIRECTORY}/${ARJUN_GIS_CONFIG_FILENAME}"
-    DESTINATION "${ARJUN_GIS_INSTALL_CMAKE_DIR}"
+    "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_FILES_DIRECTORY}/${GISMO_CONFIG_FILENAME}"
+    DESTINATION "${GISMO_INSTALL_CMAKE_DIR}"
 )
 
 # Install the export set for use with the install-tree
 install(
-    EXPORT ${ARJUN_GIS_EXPORT_NAME}
-    DESTINATION "${ARJUN_GIS_INSTALL_CMAKE_DIR}"
+    TARGETS ${MY_TARGETS}
+    EXPORT ${GISMO_EXPORT_NAME}
+    DESTINATION "${GISMO_INSTALL_CMAKE_DIR}"
 )
